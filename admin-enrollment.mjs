@@ -13,7 +13,7 @@ export async function createAdminEnrollment({db,vault,username,password,clock=()
  const uri=generateURI({issuer:'LINEBOT Connect',label:username,secret});
  const qr=await QRCode.toString(uri,{type:'utf8',errorCorrectionLevel:'M'});
  return {
-  qr,
+  qr, manualKey:secret,
   async confirm(otp){
    if(done||clock().getTime()-created>10*60*1000||attempts++>=5)return false;
    if(typeof otp!=='string'||!/^\d{6}$/.test(otp))return false;

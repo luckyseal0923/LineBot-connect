@@ -21,6 +21,7 @@ try{
  const vault=createCredentialVault(Buffer.from(LINEBOT_ADMIN_ENCRYPTION_KEY,'base64'),{context:'admin-totp'});
  const enrollment=await createAdminEnrollment({db,vault,username,password});
  process.stdout.write('\n請使用驗證器 App 掃描（勿截圖或分享）：\n'+enrollment.qr+'\n');
+ process.stdout.write('無法掃描時，請在驗證器 App 選手動輸入設定金鑰：'+enrollment.manualKey+'\n請勿複製、截圖或分享此金鑰。\n');
  for(let i=0;i<5;i++){
   const otp=await ask('輸入驗證器六位動態碼: ',true);
   if(await enrollment.confirm(otp)){process.stdout.write('管理員已建立，請等待下一組動態碼登入。\n');break;}

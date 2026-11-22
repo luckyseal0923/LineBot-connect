@@ -16,7 +16,7 @@ test('bootstrap requires QR proof, is single use and does not grant general admi
   const secret=generateSecret(),vault=createCredentialVault(randomBytes(32),{context:'admin-totp'}),now=new Date('2026-01-01T00:00:00Z');
   await db.exec('set role linebot_enroller');
   const enroll=await createAdminEnrollment({db,vault,username:'admin_test',password:'a long test password',clock:()=>now,makeSecret:()=>secret});
-  assert.ok(enroll.qr.length>100);assert.equal(await enroll.confirm('000000'),false);
+  assert.ok(enroll.qr.length>100);assert.equal(enroll.manualKey,secret);assert.equal(await enroll.confirm('000000'),false);
   const otp=await generate({secret,epoch:Math.floor(now.getTime()/1000)});
   assert.equal(await enroll.confirm(otp),true);assert.equal(await enroll.confirm(otp),false);
   await assert.rejects(db.query('select * from linebot_private.admin_auth'));
