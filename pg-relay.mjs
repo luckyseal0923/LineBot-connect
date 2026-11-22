@@ -2,7 +2,7 @@ import net from 'node:net';
 // Forward only PostgreSQL traffic to one configured destination. Run in a
 // restricted container attached to a private application network and the
 // Supabase stack network; never publish a host port.
-export function createPgRelay({targetHost,targetPort=5432,maxConnections=4,idleTimeoutMs=30000,connect=net.createConnection}){
+export function createPgRelay({targetHost,targetPort=5432,maxConnections=4,idleTimeoutMs=120000,connect=net.createConnection}){
  if(typeof targetHost!=='string'||!/^supabase-db-[a-z0-9]+$/.test(targetHost)||!Number.isInteger(targetPort)||targetPort!==5432||!Number.isInteger(maxConnections)||maxConnections<1||maxConnections>8)throw Error('Invalid relay configuration');
  let active=0;
  return net.createServer(client=>{

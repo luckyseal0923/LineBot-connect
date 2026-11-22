@@ -8,6 +8,7 @@ const {LINEBOT_ADMIN_AUTH_DATABASE_URL,LINEBOT_REVIEW_DATABASE_URL,LINEBOT_ADMIN
 if(!LINEBOT_ADMIN_AUTH_DATABASE_URL||!LINEBOT_REVIEW_DATABASE_URL||!/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ADMIN_ENCRYPTION_KEY||'')||!ADMIN_PUBLIC_ORIGIN)throw Error('Administrator configuration is incomplete');
 const authDb=new pg.Pool({connectionString:LINEBOT_ADMIN_AUTH_DATABASE_URL,max:2,connectionTimeoutMillis:5000,statement_timeout:5000,application_name:'linebot_admin_auth'});
 const reviewDb=new pg.Pool({connectionString:LINEBOT_REVIEW_DATABASE_URL,max:2,connectionTimeoutMillis:5000,statement_timeout:5000,application_name:'linebot_review'});
+for(const db of [authDb,reviewDb]) db.on('error',()=>console.error('Idle administrator database connection closed'));
 async function roleOf(db){return (await db.query('select current_user as name,rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls from pg_roles where rolname=current_user')).rows[0];}
 const authRole=await roleOf(authDb),reviewRole=await roleOf(reviewDb);
 for(const role of [authRole,reviewRole])if(!role||role.rolsuper||role.rolcreaterole||role.rolcreatedb||role.rolreplication||role.rolbypassrls)throw Error('Unsafe administrator database role');
