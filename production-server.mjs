@@ -1,0 +1,28 @@
+import pg from 'pg';
+import { checkDatabaseRole } from './db-role-preflight.mjs';
+import { createAccounts } from './accounts.mjs';
+import { createCredentialVault } from './line-webhook.mjs';
+import { createBotStore } from './bot-store.mjs';
+import { createEventStore } from './event-store.mjs';
+import { createRequestLimiter } from './request-limiter.mjs';
+import { createLineBotLookup } from './line-client.mjs';
+import { createLinebotServer } from './app-server.mjs';
+
+const { LINEBOT_DATABASE_URL, LINEBOT_ENCRYPTION_KEY, PUBLIC_ORIGIN }=process.env;
+if(!LINEBOT_DATABASE_URL || !/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ENCRYPTION_KEY || '') || !PUBLIC_ORIGIN) throw Error('LineBOT configuration is incomplete');
+const key=Buffer.from(LINEBOT_ENCRYPTION_KEY,'base64');
+const db=new pg.Pool({connectionString:LINEBOT_DATABASE_URL,max:2,connectionTimeoutMillis:5000,idleTimeoutMillis:30000,statement_timeout:5000,application_name:'linebot_connection'});
+const identity=await db.query(`select current_user as name, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls from pg_roles where rolname=current_user`);
+const role=identity.rows[0];
+if(!role || role.rolsuper || role.rolcreaterole || role.rolcreatedb || role.rolreplication || role.rolbypassrls) throw Error('Unsafe database role');
+if(!(await checkDatabaseRole(db,'linebot_runtime')).safe) throw Error('Database role failed isolation checks');
+const accounts=createAccounts({db});
+const vault=createCredentialVault(key);
+const events=createEventStore({db,vault:createCredentialVault(key,{context:'line-event',maxBytes:32000})});
+const bots=createBotStore({db,vault,tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
+const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow:createRequestLimiter({db}),lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN});
+server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('LineBOT service ready'));
+const cleanup=setInterval(()=>db.query('select linebot_private.purge_expired_events()').catch(()=>console.error('Event cleanup failed')),60*60*1000);
+cleanup.unref();
+const shutdown=()=>{clearInterval(cleanup);server.close(()=>db.end());};
+process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);

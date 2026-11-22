@@ -1,0 +1,6 @@
+FROM node:24-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --chown=node:node pg-relay.mjs pg-relay-server.mjs ./
+USER node
+CMD ["node", "pg-relay-server.mjs"]

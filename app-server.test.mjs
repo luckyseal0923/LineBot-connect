@@ -1,0 +1,52 @@
+import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+import { createHmac,randomBytes } from 'node:crypto';
+import { PGlite } from '@electric-sql/pglite';
+import { createAccounts } from './accounts.mjs';
+import { createCredentialVault } from './line-webhook.mjs';
+import { createBotStore } from './bot-store.mjs';
+import { createEventStore } from './event-store.mjs';
+import { createRequestLimiter } from './request-limiter.mjs';
+import { createLinebotServer } from './app-server.mjs';
+
+test('complete isolated HTTP flow saves signed LINE events once per account',async()=>{
+ const db=new PGlite();let server;
+ try{
+  await db.exec("create role anon; create role authenticated; create role linebot_runtime; create role linebot_reviewer; set linebot.isolated_test='yes';");
+  await db.exec(await readFile(new URL('./db/005_independent_accounts.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('./db/006_runtime_grants.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('./db/007_review_retention.sql',import.meta.url),'utf8'));
+  const key=randomBytes(32),vault=createCredentialVault(key),events=createEventStore({db,vault:createCredentialVault(key,{context:'line-event',maxBytes:1048576})});
+  const accounts=createAccounts({db}),bots=createBotStore({db,vault,tokenVault:createCredentialVault(Buffer.alloc(32,1),{context:'channel-access-token'})}),allow=createRequestLimiter({db});
+  const origin='http://127.0.0.1:39180';server=createLinebotServer({accounts,bots,vault,eventStore:events,allow,lookupBot:async token=>({userId:'U'+(token==='token-b'?'b':'a').repeat(32),displayName:'test bot'}),publicOrigin:origin});
+  await new Promise(resolve=>server.listen(39180,'127.0.0.1',resolve));
+  const post=(path,data,cookie)=>fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(data)});
+  for(const user of ['alice_a','bob_b'])assert.equal((await post('/independent-api/register',{username:user,displayName:user,password:'a secure password'})).status,201);
+  const beforeApproval=await post('/independent-api/login',{username:'alice_a',password:'a secure password'});
+  const pendingCookie=beforeApproval.headers.get('set-cookie').split(';')[0];
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},pendingCookie)).status,403);
+  await db.exec("update linebot_private.accounts set status='active'");
+  const session=async user=>{const r=await post('/independent-api/login',{username:user,password:'a secure password'});return r.headers.get('set-cookie').split(';')[0];};
+  const a=await session('alice_a'),b=await session('bob_b');
+  const me=async cookie=>(await fetch(origin+'/independent-api/me',{headers:{Cookie:cookie}})).json();
+  const aa=await me(a),bb=await me(b);assert.notEqual(aa.webhookUrl,bb.webhookUrl);
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},a)).status,200);
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},b)).status,409);
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-b',accessToken:'token-b'},b)).status,200);
+  let body=JSON.stringify({destination:'U'+'a'.repeat(32),events:[{type:'message',webhookEventId:'event-123',message:{text:'private data'}}]});
+  const sig=secret=>createHmac('sha256',secret).update(body).digest('base64');
+  const send=(url,signature)=>fetch(url,{method:'POST',headers:{'x-line-signature':signature,'Content-Type':'application/json'},body});
+  assert.equal((await send(bb.webhookUrl,sig('secret-a'))).status,401);
+  assert.equal((await send(aa.webhookUrl,sig('secret-a'))).status,200);
+  assert.equal((await send(aa.webhookUrl,sig('secret-a'))).status,200);
+  let saved=(await db.query('select * from linebot_private.webhook_events')).rows;
+  assert.equal(saved.length,1);assert.equal(JSON.stringify(saved).includes('private data'),false);
+  assert.equal((await send(bb.webhookUrl,sig('secret-b'))).status,403);
+  body=JSON.stringify({destination:'U'+'b'.repeat(32),events:[{type:'message',webhookEventId:'event-123',message:{text:'private data'}}]});
+  assert.equal((await send(bb.webhookUrl,sig('secret-b'))).status,200);
+  saved=(await db.query('select * from linebot_private.webhook_events')).rows;assert.equal(saved.length,2);
+  await post('/independent-api/bot/disable',{},a);
+  assert.equal((await send(aa.webhookUrl,sig('secret-a'))).status,404);
+ }finally{if(server)await new Promise(resolve=>server.close(resolve));await db.close();}
+});
