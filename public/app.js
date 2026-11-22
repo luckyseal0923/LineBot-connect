@@ -7,6 +7,7 @@ const pages = {
 const view = document.querySelector('#view');
 function render() {
   const key = location.hash.slice(1) || 'overview';
+  if (key === 'account') { renderAccount(); return; }
   const current = pages[key];
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === (current ? key : 'overview')));
   document.querySelector('#breadcrumb').textContent = current?.title || '總覽';
@@ -19,5 +20,11 @@ function render() {
   <div class="section-heading"><div><p class="eyebrow">GETTING STARTED</p><h2>三個步驟，開始串接</h2><p>依序完成設定，建立您的第一條通知路徑。</p></div><span class="progress">0 / 3 已完成</span></div>
   <section class="steps" aria-label="開始使用步驟"><a href="#bot" class="step"><div class="step-top"><span class="step-icon">◉</span><span class="step-number">01</span></div><h3>設定 LINE Bot</h3><p>填入頻道憑證並驗證 Webhook，連接您的官方帳號。</p><span class="step-link">查看設定 <b>↗</b></span></a><a href="#recipients" class="step"><div class="step-top"><span class="step-icon">♙</span><span class="step-number">02</span></div><h3>綁定收件對象</h3><p>透過 LINE 聊天室配對，指定通知要送給誰。</p><span class="step-link">查看綁定 <b>↗</b></span></a><a href="#integrations" class="step"><div class="step-top"><span class="step-icon">⌘</span><span class="step-number">03</span></div><h3>建立外部串接</h3><p>取得專用 API Key，將您的系統與通知連接。</p><span class="step-link">查看串接 <b>↗</b></span></a></section>
   <section class="activity panel"><div class="activity-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>最近傳訊</h2></div><a class="text-link" href="#messages">查看全部紀錄 <span>↗</span></a></div><div class="empty"><div class="empty-icon">≡</div><strong>還沒有傳訊紀錄</strong><p>完成設定並開始發送後，紀錄將顯示於此。</p></div></section>`;
+}
+
+function renderAccount() {
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === 'account'));
+  document.querySelector('#breadcrumb').textContent = '帳號申請與登入';
+  view.innerHTML = `<div class="page-heading"><div><p class="eyebrow">ACCOUNT</p><h1>帳號申請與登入</h1><p>目前為介面預覽，帳號申請功能尚未開放。</p></div><span class="state">尚未開放</span></div><section class="panel account-panel"><h2>專屬 Webhook 網址</h2><p>規劃於申請流程完成後，為每個帳號產生獨立的隨機識別碼。LINE 簽章驗證及資料庫連線完成後，才會提供可使用的網址。</p></section>`;
 }
 window.addEventListener('hashchange', render); render();
