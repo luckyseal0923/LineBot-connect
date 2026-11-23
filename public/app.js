@@ -36,10 +36,21 @@ async function renderAccount() {
   const me=await call('me');if(!content.isConnected)return;
   if(me.response.ok){
     message.textContent='已登入：'+me.result.displayName+'（'+me.result.username+'）'+(me.result.status==='pending'?'，申請尚待審核。':'');
-    content.innerHTML=`<h2>專屬 Webhook</h2><p>將此網址貼到 LINE Developers Console 的 Messaging API Webhook URL。</p><label>Webhook 網址<input id="webhook-url" readonly></label><h2>設定 LINE Bot</h2><p>輸入此 Bot 的 Channel secret 和 access token。更換 Webhook 可能影響既有服務。此版本尚未提供通知發送。</p><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="disable-form"><button type="submit">停用此 Bot</button></form><form id="logout-form"><button type="submit">登出</button></form>`;
-    content.querySelector('#webhook-url').value=me.result.webhookUrl;
-    content.querySelector('#bot-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;const r=await call('bot',{channelSecret:new FormData(form).get('channelSecret'),accessToken:new FormData(form).get('accessToken')}).catch(()=>null);content.querySelector('#bot-message').textContent=r?.result.message||r?.result.error||'暫時無法儲存。';if(r?.response.ok)form.reset();});
-    content.querySelector('#disable-form').addEventListener('submit',async e=>{e.preventDefault();const r=await call('bot/disable',{}).catch(()=>null);content.querySelector('#bot-message').textContent=r?.result.message||r?.result.error||'暫時無法停用。';});
+    content.innerHTML=`<h2>我的 LINE Bot</h2><p>每個 Bot 都有自己的 Webhook 網址。此版本尚未提供通知發送。</p><div id="bot-list"></div><h2>新增或更新 LINE Bot</h2><p>帳號核准後，輸入 Bot 的 Channel secret 和 access token；系統驗證後會建立專屬網址。</p><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="logout-form"><button type="submit">登出</button></form>`;
+    const loadBots=async()=>{
+      const r=await call('bots').catch(()=>null),list=content.querySelector('#bot-list');
+      if(!list?.isConnected)return;list.replaceChildren();
+      if(!r?.response.ok){list.textContent='無法載入 LINE Bot，請稍後再試。';return;}
+      if(!r.result.bots.length){list.textContent='目前還沒有 LINE Bot。';return;}
+      for(const bot of r.result.bots){
+        const section=document.createElement('section'),title=document.createElement('h3'),label=document.createElement('label'),url=document.createElement('input'),state=document.createElement('p');
+        title.textContent=bot.name;label.textContent='Webhook 網址';url.value=bot.webhookUrl;url.readOnly=true;label.append(url);state.textContent=bot.enabled?'已啟用':'已停用';section.append(title,label,state);
+        if(bot.enabled){const button=document.createElement('button');button.type='button';button.textContent='停用此 Bot';button.addEventListener('click',async()=>{button.disabled=true;const result=await call('bot/disable',{botId:bot.id}).catch(()=>null);content.querySelector('#bot-message').textContent=result?.result.message||result?.result.error||'暫時無法停用。';if(result?.response.ok)await loadBots();else button.disabled=false;});section.append(button);}
+        list.append(section);
+      }
+    };
+    await loadBots();
+    content.querySelector('#bot-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;const r=await call('bot',{channelSecret:new FormData(form).get('channelSecret'),accessToken:new FormData(form).get('accessToken')}).catch(()=>null);content.querySelector('#bot-message').textContent=r?.result.message||r?.result.error||'暫時無法儲存。';if(r?.response.ok){form.reset();await loadBots();}});
     content.querySelector('#logout-form').addEventListener('submit',async e=>{e.preventDefault();await call('logout',{});renderAccount();});
   } else {
     message.textContent='這是接線站獨立帳號，暫無 Email 驗證或自助找回密碼，請妥善保管密碼。';

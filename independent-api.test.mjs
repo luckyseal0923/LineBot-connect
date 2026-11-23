@@ -14,6 +14,7 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
  try {
   await db.exec("create role anon; create role authenticated; set linebot.isolated_test='yes';");
   await db.exec(await readFile(new URL('./db/005_independent_accounts.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('./db/011_multiple_bots.sql',import.meta.url),'utf8'));
   const accounts=createAccounts({db}),vault=createCredentialVault(randomBytes(32)),bots=createBotStore({db,vault,tokenVault:createCredentialVault(Buffer.alloc(32,1),{context:'channel-access-token'})});
   const api=createIndependentApi({accounts,bots,allow:async()=>true,lookupBot:async token=>({userId:'U'+(token==='token-b'?'b':'a').repeat(32),displayName:'test bot'}),publicOrigin:'http://127.0.0.1:39179'});
   server=createServer(async(req,res)=>{if(!await api(req,res)){res.writeHead(404);res.end();}});
@@ -28,9 +29,11 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
   assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
   assert.match(login.headers.get('set-cookie'),/HttpOnly; SameSite=Strict/);
   const me=await (await fetch(origin+'/independent-api/me',{headers:{Cookie:cookie}})).json();
-  assert.equal(me.username,'user_a');assert.match(me.webhookUrl,/\/webhooks\/line\/[0-9a-f-]{36}$/);
+  assert.equal(me.username,'user_a');
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},cookie)).status,200);
-  assert.equal((await bots.findByWebhook(me.webhookUrl.split('/').pop())).userId,(await accounts.me(cookie.split('=')[1])).id);
+  const list=await (await fetch(origin+'/independent-api/bots',{headers:{Cookie:cookie}})).json();
+  assert.equal(list.bots.length,1);assert.match(list.bots[0].webhookUrl,/\/webhooks\/line\/[0-9a-f-]{36}$/);
+  assert.equal((await bots.findByWebhook(list.bots[0].webhookUrl.split('/').pop())).userId,(await accounts.me(cookie.split('=')[1])).id);
   assert.equal((await post('/independent-api/bot',{channelSecret:'x'})).status,401);
   await post('/independent-api/logout',{},cookie);
   assert.equal((await fetch(origin+'/independent-api/me',{headers:{Cookie:cookie}})).status,401);
