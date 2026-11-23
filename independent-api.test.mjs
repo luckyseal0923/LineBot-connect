@@ -24,6 +24,10 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
   assert.equal((await post('/independent-api/register',{username:'user_a',displayName:'A',password:'a secure password'})).status,201);
   assert.equal((await post('/independent-api/register',{username:'user_b',displayName:'B',password:'a secure password'})).status,201);
   assert.equal((await post('/independent-api/login',{username:'user_a',password:'a secure password'},null,'https://other.example')).status,403);
+  const pending=await post('/independent-api/login',{username:'user_a',password:'a secure password'});
+  const pendingCookie=pending.headers.get('set-cookie').split(';')[0];
+  assert.equal((await (await fetch(origin+'/independent-api/me',{headers:{Cookie:pendingCookie}})).json()).status,'pending');
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},pendingCookie)).status,403);
   await db.exec("update linebot_private.accounts set status='active'");
   const login=await post('/independent-api/login',{username:'user_a',password:'a secure password'});
   assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
@@ -34,6 +38,15 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
   const list=await (await fetch(origin+'/independent-api/bots',{headers:{Cookie:cookie}})).json();
   assert.equal(list.bots.length,1);assert.match(list.bots[0].webhookUrl,/\/webhooks\/line\/[0-9a-f-]{36}$/);
   assert.equal((await bots.findByWebhook(list.bots[0].webhookUrl.split('/').pop())).userId,(await accounts.me(cookie.split('=')[1])).id);
+  const loginB=await post('/independent-api/login',{username:'user_b',password:'a secure password'});
+  const cookieB=loginB.headers.get('set-cookie').split(';')[0];
+  assert.deepEqual((await (await fetch(origin+'/independent-api/bots',{headers:{Cookie:cookieB}})).json()).bots,[]);
+  assert.equal((await post('/independent-api/bot/disable',{botId:list.bots[0].id},cookieB)).status,404);
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},cookieB)).status,409);
+  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-b',accessToken:'token-b'},cookieB)).status,200);
+  const listB=await (await fetch(origin+'/independent-api/bots',{headers:{Cookie:cookieB}})).json();
+  assert.equal(listB.bots.length,1);assert.notEqual(listB.bots[0].webhookUrl,list.bots[0].webhookUrl);
+  assert.equal((await (await fetch(origin+'/independent-api/bots',{headers:{Cookie:cookie}})).json()).bots[0].enabled,true);
   assert.equal((await post('/independent-api/bot',{channelSecret:'x'})).status,401);
   await post('/independent-api/logout',{},cookie);
   assert.equal((await fetch(origin+'/independent-api/me',{headers:{Cookie:cookie}})).status,401);

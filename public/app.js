@@ -7,7 +7,7 @@ const pages = {
 const view = document.querySelector('#view');
 function render() {
   const key = location.hash.slice(1) || 'overview';
-  if (key === 'account') { renderAccount(); return; }
+  if (key === 'account' || key === 'bot') { renderAccount(key); return; }
   if (key === 'recipients' || key === 'messages') { renderNotifications(key); return; }
   const current = pages[key];
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === (current ? key : 'overview')));
@@ -16,11 +16,11 @@ function render() {
     view.innerHTML = `<div class="page-heading"><div><p class="eyebrow">WORKSPACE</p><h1>${current.title}</h1><p>${current.description}</p></div><span class="state">尚未開放</span></div><section class="panel detail"><div class="detail-icon">✳</div><h2>功能開發中</h2><p>此頁目前展示預計提供的操作流程，尚未連接後端服務。</p><ol>${current.steps.map(step => `<li>${step}</li>`).join('')}</ol><a class="text-link" href="#overview">返回總覽</a></section>`;
     return;
   }
-  view.innerHTML = `<div class="page-heading"><div><p class="eyebrow">OVERVIEW</p><h1>歡迎來到接線站 <span class="wave">✳</span></h1><p>在這裡，將您的系統與 LINE 通知連接起來。</p></div><span class="state"><i></i> 尚未完成設定</span></div>
-  <section class="hero"><div class="hero-copy"><span class="hero-tag">開始使用</span><h2>讓重要訊息，<br>準時送到對的人手上。</h2><p>完成簡單設定，即可透過自己的 LINE 官方帳號，接收來自各個系統的通知。</p><a class="hero-link" href="#bot">查看設定步驟 <span>↗</span></a></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card art-card-one">▦</div><div class="art-card art-card-two">✓</div><div class="art-center">L<span>•</span></div><div class="art-label">CONNECTED</div></div></section>
-  <div class="section-heading"><div><p class="eyebrow">GETTING STARTED</p><h2>三個步驟，開始串接</h2><p>依序完成設定，建立您的第一條通知路徑。</p></div><span class="progress">0 / 3 已完成</span></div>
-  <section class="steps" aria-label="開始使用步驟"><a href="#bot" class="step"><div class="step-top"><span class="step-icon">◉</span><span class="step-number">01</span></div><h3>設定 LINE Bot</h3><p>填入頻道憑證並驗證 Webhook，連接您的官方帳號。</p><span class="step-link">查看設定 <b>↗</b></span></a><a href="#recipients" class="step"><div class="step-top"><span class="step-icon">♙</span><span class="step-number">02</span></div><h3>綁定收件對象</h3><p>透過 LINE 聊天室配對，指定通知要送給誰。</p><span class="step-link">查看綁定 <b>↗</b></span></a><a href="#integrations" class="step"><div class="step-top"><span class="step-icon">⌘</span><span class="step-number">03</span></div><h3>建立外部串接</h3><p>取得專用 API Key，將您的系統與通知連接。</p><span class="step-link">查看串接 <b>↗</b></span></a></section>
-  <section class="activity panel"><div class="activity-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>最近傳訊</h2></div><a class="text-link" href="#messages">查看全部紀錄 <span>↗</span></a></div><div class="empty"><div class="empty-icon">≡</div><strong>還沒有傳訊紀錄</strong><p>完成設定並開始發送後，紀錄將顯示於此。</p></div></section>`;
+  view.innerHTML = `<div class="page-heading"><div><p class="eyebrow">OVERVIEW</p><h1>歡迎來到接線站 <span class="wave">✳</span></h1><p>透過自己的 LINE Bot 傳送文字通知。</p></div><span class="state"><i></i> 測試版</span></div>
+  <section class="hero"><div class="hero-copy"><span class="hero-tag">開始使用</span><h2>讓重要訊息，<br>準時送到對的人手上。</h2><p>完成設定後，即可透過自己的 LINE 官方帳號傳送文字通知。</p><a class="hero-link" href="#bot">查看設定步驟 <span>↗</span></a></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card art-card-one">▦</div><div class="art-card art-card-two">✓</div><div class="art-center">L<span>•</span></div><div class="art-label">CONNECTED</div></div></section>
+  <div class="section-heading"><div><p class="eyebrow">GETTING STARTED</p><h2>開始使用</h2><p>先申請帳號並等待管理員核准，再依序完成以下步驟。</p></div></div>
+  <section class="steps" aria-label="開始使用步驟"><a href="#bot" class="step"><div class="step-top"><span class="step-icon">◉</span><span class="step-number">01</span></div><h3>設定 LINE Bot</h3><p>輸入自己 Bot 的憑證，再將專屬 Webhook 網址設定到 LINE Developers 並驗證。</p><span class="step-link">查看設定 <b>↗</b></span></a><a href="#recipients" class="step"><div class="step-top"><span class="step-icon">♙</span><span class="step-number">02</span></div><h3>配對收件對象</h3><p>請收件者將一次性配對文字傳給 Bot。</p><span class="step-link">查看配對 <b>↗</b></span></a><a href="#messages" class="step"><div class="step-top"><span class="step-icon">≡</span><span class="step-number">03</span></div><h3>發送測試通知</h3><p>選擇配對對象，傳送文字並確認對方收到。</p><span class="step-link">前往發送 <b>↗</b></span></a></section>
+  <section class="activity panel"><div class="activity-head"><div><p class="eyebrow">NOTIFICATIONS</p><h2>發送紀錄</h2><p>可在發送通知頁查看最近紀錄；外部系統串接仍在開發中。</p></div><a class="text-link" href="#messages">查看紀錄 <span>↗</span></a></div></section>`;
 }
 
 async function notificationCall(path,data){
@@ -55,9 +55,9 @@ async function renderNotifications(page){
  }
 }
 
-async function renderAccount() {
-  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === 'account'));
-  document.querySelector('#breadcrumb').textContent = '帳號申請與登入';
+async function renderAccount(section = 'account') {
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === section));
+  document.querySelector('#breadcrumb').textContent = section === 'bot' ? 'LINE Bot 設定' : '帳號申請與登入';
   view.innerHTML = `<div class="page-heading"><div><p class="eyebrow">ACCOUNT</p><h1>帳號申請與登入</h1><p>建立接線站專用帳號，設定自己的 LINE Bot。</p></div></div><section class="panel account-panel"><p id="account-message" role="status">正在確認服務狀態…</p><div id="account-content"></div></section>`;
   const content=document.querySelector('#account-content'), message=document.querySelector('#account-message');
   const call=async (path,data)=>{const response=await fetch('/independent-api/'+path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});let result={};try{result=await response.json();}catch{};return {response,result};};
@@ -69,7 +69,7 @@ async function renderAccount() {
   const me=await call('me');if(!content.isConnected)return;
   if(me.response.ok){
     message.textContent='已登入：'+me.result.displayName+'（'+me.result.username+'）'+(me.result.status==='pending'?'，申請尚待審核。':'');
-    content.innerHTML=`<h2>我的 LINE Bot</h2><p>每個 Bot 都有自己的 Webhook 網址。配對收件對象後即可發送文字通知。</p><div id="bot-list"></div><h2>新增或更新 LINE Bot</h2><p>帳號核准後，輸入 Bot 的 Channel secret 和 access token；系統驗證後會建立專屬網址。</p><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="logout-form"><button type="submit">登出</button></form>`;
+    content.innerHTML=`<h2>我的 LINE Bot</h2><p>每個 Bot 都有自己的 Webhook 網址。配對收件對象後即可發送文字通知。</p><div id="bot-list"></div><h2>新增或更新 LINE Bot</h2><p>帳號核准後，請依照以下步驟設定：</p><ol><li>在 LINE Developers 建立 Messaging API channel，取得該 Bot 的 Channel secret 與 Channel access token。</li><li>在下方輸入兩項憑證並儲存，成功後上方會顯示專屬 Webhook 網址。請勿把憑證貼到聊天或公開頁面。</li><li>將網址貼至 LINE Developers 的 Webhook URL，開啟 Use webhook，再按 Verify 驗證。</li><li>前往「收件對象」產生一次性配對文字，請收件者加 Bot 為好友並在一對一聊天室傳送。</li><li>在「傳訊紀錄」發送文字，請收件者確認 LINE 已收到。LINE 已受理不等於對方已收到。</li></ol><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="logout-form"><button type="submit">登出</button></form>`;
     const loadBots=async()=>{
       const r=await call('bots').catch(()=>null),list=content.querySelector('#bot-list');
       if(!list?.isConnected)return;list.replaceChildren();
@@ -87,7 +87,7 @@ async function renderAccount() {
     content.querySelector('#logout-form').addEventListener('submit',async e=>{e.preventDefault();await call('logout',{});renderAccount();});
   } else {
     message.textContent='這是接線站獨立帳號，暫無 Email 驗證或自助找回密碼，請妥善保管密碼。';
-    content.innerHTML=`<h2>申請帳號</h2><form id="register-form"><label>帳號（3–32 字元，小寫英文字母、數字或底線）<input name="username" required pattern="[a-z0-9_]{3,32}" autocomplete="username"></label><label>顯示名稱<input name="displayName" required maxlength="100" autocomplete="name"></label><label>密碼（至少 8 個字元）<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><button type="submit">建立帳號</button></form><h2>登入</h2><form id="login-form"><label>帳號<input name="username" required autocomplete="username"></label><label>密碼<input name="password" type="password" required autocomplete="current-password"></label><button type="submit">登入</button></form><p id="form-message" role="status"></p>`;
+    content.innerHTML=`<h2>申請帳號</h2><p>送出申請後請聯絡平台管理員審核；核准後登入，即可設定自己的 LINE Bot。請自行保管密碼，勿提供給其他人。</p><form id="register-form"><label>帳號（3–32 字元，小寫英文字母、數字或底線）<input name="username" required pattern="[a-z0-9_]{3,32}" autocomplete="username"></label><label>顯示名稱<input name="displayName" required maxlength="100" autocomplete="name"></label><label>密碼（至少 8 個字元）<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><button type="submit">建立帳號</button></form><h2>登入</h2><form id="login-form"><label>帳號<input name="username" required autocomplete="username"></label><label>密碼<input name="password" type="password" required autocomplete="current-password"></label><button type="submit">登入</button></form><p id="form-message" role="status"></p>`;
     for(const [id,path] of [['register-form','register'],['login-form','login']])content.querySelector('#'+id).addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;const data=Object.fromEntries(new FormData(form));const r=await call(path,data).catch(()=>null);content.querySelector('#form-message').textContent=r?.result.message||r?.result.error||'暫時無法完成，請稍後再試。';if(r?.response.ok){form.reset();if(path==='login')renderAccount();}});
   }
 }
