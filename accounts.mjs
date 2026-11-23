@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 const tokenDigest = token => createHash('sha256').update(token).digest('hex');
 const validUser = value => typeof value === 'string' && /^[a-z0-9_]{3,32}$/.test(value);
-const validPassword = value => typeof value === 'string' && value.length >= 12 && Buffer.byteLength(value) <= 128;
+const validPassword = value => typeof value === 'string' && value.length >= 8 && Buffer.byteLength(value) <= 128;
 const dummySalt = '00000000000000000000000000000000';
 const dummyHash = Buffer.alloc(64);
 let hashing=0;

@@ -14,6 +14,8 @@ test('independent accounts persist isolated sessions and random webhook keys', a
   await db.exec(sql);
   let now = new Date('2026-01-01T00:00:00Z');
   const accounts = createAccounts({db, clock: () => now});
+  assert.equal((await accounts.register({username:'short_user',displayName:'Short',password:'1234567'})).status,'invalid');
+  assert.equal((await accounts.register({username:'eight_user',displayName:'Eight',password:'12345678'})).status,'created');
   assert.equal((await accounts.register({username:'user_a',displayName:'User A',password:'a secure password'})).status,'created');
   assert.equal((await accounts.register({username:'user_b',displayName:'User B',password:'a different password'})).status,'created');
   assert.equal((await accounts.register({username:'user_a',displayName:'Duplicate',password:'a secure password'})).status,'unavailable');
