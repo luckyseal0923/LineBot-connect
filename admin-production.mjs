@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { checkDatabaseRole } from './db-role-preflight.mjs';
 import { createCredentialVault } from './line-webhook.mjs';
-import { createAdminMfa } from './admin-mfa.mjs';
+import { createAdminPassword } from './admin-password.mjs';
 import { createAdminRateLimiter } from './admin-rate-limit.mjs';
 import { createAdminServer } from './admin-server.mjs';
 const {LINEBOT_ADMIN_AUTH_DATABASE_URL,LINEBOT_REVIEW_DATABASE_URL,LINEBOT_ADMIN_ENCRYPTION_KEY,ADMIN_PUBLIC_ORIGIN}=process.env;
@@ -15,7 +15,9 @@ for(const role of [authRole,reviewRole])if(!role||role.rolsuper||role.rolcreater
 if(authRole.name===reviewRole.name)throw Error('Administrator roles must be separate');
 if(!(await checkDatabaseRole(authDb,'linebot_admin_auth')).safe || !(await checkDatabaseRole(reviewDb,'linebot_reviewer')).safe)throw Error('Administrator database roles failed isolation checks');
 const vault=createCredentialVault(Buffer.from(LINEBOT_ADMIN_ENCRYPTION_KEY,'base64'),{context:'admin-totp'});
-const mfa=createAdminMfa({db:authDb,vault});
+const mfa=createAdminPassword({db:authDb});
 const server=createAdminServer({authDb,reviewDb,vault,mfa,allow:createAdminRateLimiter({db:authDb}),publicOrigin:ADMIN_PUBLIC_ORIGIN});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('Admin service ready'));
-const stop=()=>server.close(()=>Promise.all([authDb.end(),reviewDb.end()]));process.once('SIGTERM',stop);process.once('SIGINT',stop);
+const cleanup=setInterval(()=>authDb.query('select linebot_private.purge_admin_login_audit()').catch(()=>console.error('Admin login audit cleanup failed')),60*60*1000);
+cleanup.unref();
+const stop=()=>{clearInterval(cleanup);server.close(()=>Promise.all([authDb.end(),reviewDb.end()]));};process.once('SIGTERM',stop);process.once('SIGINT',stop);

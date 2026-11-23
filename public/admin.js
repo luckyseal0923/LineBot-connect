@@ -3,7 +3,7 @@ const login=document.querySelector('#login-form'),logout=document.querySelector(
 async function load(){
  list.replaceChildren();status.textContent='正在載入…';
  let response;try{response=await fetch('/admin-api/pending');}catch{status.textContent='管理服務無法連線。';return;}
- if(response.status===401){login.hidden=false;logout.hidden=true;status.textContent='請輸入管理員密碼與驗證器動態碼。';return;}
+ if(response.status===401){login.hidden=false;logout.hidden=true;status.textContent='請輸入管理員帳號與密碼。';return;}
  if(!response.ok){status.textContent='無法載入申請。';return;}
  login.hidden=true;logout.hidden=false;
  const data=await response.json();status.textContent=data.accounts.length?'請選擇申請並輸入審核原因。':'目前沒有待審申請。';

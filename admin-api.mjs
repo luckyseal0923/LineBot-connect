@@ -10,7 +10,7 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
   if(req.method==='POST' && req.headers.origin!==origin.origin){send(res,403,{error:'來源不正確'});return true;}
   try {
    const admin=await authorize(req);
-   if(!admin?.id || admin.mfaVerified!==true){send(res,401,{error:'請先完成管理員多因素登入。'});return true;}
+   if(!admin?.id || (admin.mfaVerified!==true && admin.passwordVerified!==true)){send(res,401,{error:'請先登入管理員帳號。'});return true;}
    if(path==='/admin-api/pending' && req.method==='GET'){
     const result=await reviewDb.query("select username,display_name,status,created_at from linebot_private.accounts where status='pending' order by created_at limit 100");
     send(res,200,{accounts:result.rows});return true;

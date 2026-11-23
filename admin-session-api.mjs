@@ -17,7 +17,7 @@ export function createAdminSessionApi({mfa,allow,publicOrigin}){
      if(!await allow('admin-login')){send(res,429,{error:'嘗試次數過多，請稍後再試。'});return true;}
      let n=0;const chunks=[];for await(const chunk of req){n+=chunk.length;if(n>4096){send(res,413,{error:'資料過大'});return true;}chunks.push(chunk);}
      let data;try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(res,400,{error:'資料格式不正確'});return true;}
-     const token=await mfa.login(data);if(!token){send(res,401,{error:'帳號、密碼或動態碼不正確。'});return true;}
+     const token=await mfa.login(data);if(!token){send(res,401,{error:'帳號或密碼不正確，或帳號暫時鎖定。'});return true;}
      send(res,200,{message:'登入成功'},{'Set-Cookie':`linebot_admin=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=900`});return true;
     }
     if(path==='/admin-session/logout'){
