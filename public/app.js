@@ -8,6 +8,7 @@ const view = document.querySelector('#view');
 function render() {
   const key = location.hash.slice(1) || 'overview';
   if (key === 'account') { renderAccount(); return; }
+  if (key === 'recipients' || key === 'messages') { renderNotifications(key); return; }
   const current = pages[key];
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === (current ? key : 'overview')));
   document.querySelector('#breadcrumb').textContent = current?.title || '總覽';
@@ -22,6 +23,38 @@ function render() {
   <section class="activity panel"><div class="activity-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>最近傳訊</h2></div><a class="text-link" href="#messages">查看全部紀錄 <span>↗</span></a></div><div class="empty"><div class="empty-icon">≡</div><strong>還沒有傳訊紀錄</strong><p>完成設定並開始發送後，紀錄將顯示於此。</p></div></section>`;
 }
 
+async function notificationCall(path,data){
+ const response=await fetch('/independent-api/'+path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});
+ let result={};try{result=await response.json();}catch{}return {response,result};
+}
+async function renderNotifications(page){
+ document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===page));
+ document.querySelector('#breadcrumb').textContent=page==='recipients'?'收件對象':'發送通知';
+ view.innerHTML=`<div class="page-heading"><div><p class="eyebrow">NOTIFICATIONS</p><h1>${page==='recipients'?'收件對象':'發送通知'}</h1><p>${page==='recipients'?'讓收件者在 LINE 主動完成配對。':'使用自己的 Bot 發送文字訊息。'}</p></div></div><section class="panel account-panel"><p id="notify-status" role="status">正在載入…</p><div id="notify-content"></div></section>`;
+ const content=view.querySelector('#notify-content'),status=view.querySelector('#notify-status');
+ const me=await notificationCall('me').catch(()=>null);if(!content.isConnected)return;
+ if(!me?.response.ok||me.result.status!=='active'){status.textContent='請先登入已核准的帳號。';return;}
+ const [bots,recipients]=await Promise.all([notificationCall('bots'),notificationCall('recipients')]).catch(()=>[]);
+ if(!content.isConnected)return;if(!bots?.response.ok||!recipients?.response.ok){status.textContent='暫時無法載入資料，請稍後再試。';return;}
+ status.textContent='';
+ if(page==='recipients'){
+  content.innerHTML=`<h2>新增收件對象</h2><p>選擇 Bot 並輸入名稱，將產生的配對文字交給收件者；請收件者加該 Bot 為好友後，在一對一聊天室傳送文字。配對碼 10 分鐘內有效，僅能使用一次。</p><form id="pair-form"><label>LINE Bot<select name="botId" required></select></label><label>收件對象名稱<input name="label" required maxlength="80"></label><button>產生配對文字</button></form><p id="pair-result" role="status"></p><label id="pair-label" hidden>配對文字<input id="pair-code" readonly></label><h2>已配對收件對象</h2><div id="recipients-list"></div><p><a class="text-link" href="#messages">前往發送通知</a></p>`;
+  const select=content.querySelector('select');for(const bot of bots.result.bots.filter(x=>x.enabled)){const option=document.createElement('option');option.value=bot.id;option.textContent=bot.name;select.append(option);}
+  if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='請先設定 LINE Bot';select.append(option);}
+  const list=content.querySelector('#recipients-list');if(!recipients.result.recipients.length)list.textContent='尚無收件對象。';
+  for(const recipient of recipients.result.recipients){const row=document.createElement('p'),name=document.createElement('span'),button=document.createElement('button');name.textContent=`${recipient.label}（${recipient.botName}） `;button.type='button';button.textContent='移除';button.addEventListener('click',async()=>{if(!confirm('確定移除此收件對象？'))return;button.disabled=true;const r=await notificationCall('recipient/disable',{recipientId:recipient.id}).catch(()=>null);if(r?.response.ok)renderNotifications(page);else{status.textContent='移除失敗，請稍後再試。';button.disabled=false;}});row.append(name,button);list.append(row);}
+  content.querySelector('#pair-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');button.disabled=true;const r=await notificationCall('recipient/pair',Object.fromEntries(new FormData(form))).catch(()=>null);button.disabled=false;content.querySelector('#pair-result').textContent=r?.response.ok?'請將下方文字交給收件者，傳送後重新整理此頁。':r?.result.error||'暫時無法建立配對。';if(r?.response.ok){content.querySelector('#pair-label').hidden=false;content.querySelector('#pair-code').value=r.result.message;}});
+ }else{
+  content.innerHTML=`<h2>發送文字訊息</h2><p>請先確認收件對象及內容。LINE 受理後不代表對方一定已收到；逾時時請先確認收件狀況，避免重複發送。發送紀錄保存 30 天，不保存訊息內容。</p><form id="send-form"><label>收件對象<select name="recipientId" required></select></label><label>訊息內容<textarea name="message" required maxlength="2000" rows="5"></textarea></label><button>發送訊息</button></form><p id="send-result" role="status"></p><h2>最近發送紀錄</h2><div id="notification-list"></div>`;
+  const select=content.querySelector('select');for(const r of recipients.result.recipients){const option=document.createElement('option');option.value=r.id;option.textContent=`${r.label}（${r.botName}）`;select.append(option);}
+  if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='請先配對收件對象';select.append(option);}
+  const records=await notificationCall('notifications').catch(()=>null);if(!content.isConnected)return;const list=content.querySelector('#notification-list');
+  const labels={accepted:'LINE 已受理',failed:'發送失敗',unknown:'結果未確認',sending:'處理中，結果未確認'};
+  if(!records?.response.ok)list.textContent='無法載入紀錄。';else if(!records.result.notifications.length)list.textContent='尚無發送紀錄。';else for(const item of records.result.notifications){const p=document.createElement('p');p.textContent=`${new Date(item.createdAt).toLocaleString('zh-TW')} · ${item.botName} → ${item.label} · ${labels[item.status]||'結果未確認'}`;list.append(p);}
+  content.querySelector('#send-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,data=Object.fromEntries(new FormData(form));if(!confirm(`確定發送給 ${select.selectedOptions[0].textContent}？`))return;const button=form.querySelector('button');button.disabled=true;data.requestId=crypto.randomUUID();const r=await notificationCall('notification/send',data).catch(()=>null);const result=content.querySelector('#send-result');result.textContent=r?.response.ok?(labels[r.result.status]||'結果未確認')+'；請至 LINE 確認。':(!r||r.response.status>=500?'結果未確認，請先至 LINE 確認後再重新發送。':r.result.error||'發送失敗。');if(r?.result.status==='accepted')form.reset();button.disabled=false;});
+ }
+}
+
 async function renderAccount() {
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === 'account'));
   document.querySelector('#breadcrumb').textContent = '帳號申請與登入';
@@ -32,11 +65,11 @@ async function renderAccount() {
   if(!content.isConnected)return;
   if(!status?.response.ok || !status.result.enabled){message.textContent='帳號功能尚未開放。';return;}
   document.querySelector('.preview-badge').textContent='接線站 · 測試版';
-  document.querySelector('.notice p').textContent='帳號與 LINE Webhook 功能開放測試；通知發送及其他功能仍在開發中。';
+  document.querySelector('.notice p').textContent='帳號、LINE Bot 與個人文字通知開放使用；外部串接仍在開發中。';
   const me=await call('me');if(!content.isConnected)return;
   if(me.response.ok){
     message.textContent='已登入：'+me.result.displayName+'（'+me.result.username+'）'+(me.result.status==='pending'?'，申請尚待審核。':'');
-    content.innerHTML=`<h2>我的 LINE Bot</h2><p>每個 Bot 都有自己的 Webhook 網址。此版本尚未提供通知發送。</p><div id="bot-list"></div><h2>新增或更新 LINE Bot</h2><p>帳號核准後，輸入 Bot 的 Channel secret 和 access token；系統驗證後會建立專屬網址。</p><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="logout-form"><button type="submit">登出</button></form>`;
+    content.innerHTML=`<h2>我的 LINE Bot</h2><p>每個 Bot 都有自己的 Webhook 網址。配對收件對象後即可發送文字通知。</p><div id="bot-list"></div><h2>新增或更新 LINE Bot</h2><p>帳號核准後，輸入 Bot 的 Channel secret 和 access token；系統驗證後會建立專屬網址。</p><form id="bot-form"><label>Channel access token<input name="accessToken" type="password" autocomplete="off" required maxlength="4096"></label><label>Channel secret<input name="channelSecret" type="password" autocomplete="off" required maxlength="512"></label><button type="submit">儲存 LINE Bot 設定</button></form><p id="bot-message" role="status"></p><form id="logout-form"><button type="submit">登出</button></form>`;
     const loadBots=async()=>{
       const r=await call('bots').catch(()=>null),list=content.querySelector('#bot-list');
       if(!list?.isConnected)return;list.replaceChildren();

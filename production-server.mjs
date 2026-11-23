@@ -8,6 +8,7 @@ import { createRequestLimiter } from './request-limiter.mjs';
 import { createLineBotLookup } from './line-client.mjs';
 import { createLinebotServer } from './app-server.mjs';
 import { createVerifiedDatabaseConfig,requireEncryptedDatabaseConnection } from './db-tls-config.mjs';
+import { createNotifications } from './notifications.mjs';
 
 const { LINEBOT_DATABASE_URL, LINEBOT_ENCRYPTION_KEY, PUBLIC_ORIGIN }=process.env;
 if(!LINEBOT_DATABASE_URL || !/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ENCRYPTION_KEY || '') || !PUBLIC_ORIGIN) throw Error('LineBOT configuration is incomplete');
@@ -23,9 +24,16 @@ const accounts=createAccounts({db});
 const vault=createCredentialVault(key);
 const events=createEventStore({db,vault:createCredentialVault(key,{context:'line-event',maxBytes:32000})});
 const bots=createBotStore({db,vault,tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
-const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow:createRequestLimiter({db}),lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN});
+const notifications=createNotifications({db,key,recipientVault:createCredentialVault(key,{context:'line-recipient'}),tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
+const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow:createRequestLimiter({db}),lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('LineBOT service ready'));
 const cleanup=setInterval(()=>db.query('select linebot_private.purge_expired_events()').catch(()=>console.error('Event cleanup failed')),60*60*1000);
 cleanup.unref();
-const shutdown=()=>{clearInterval(cleanup);server.close(()=>db.end());};
+const notificationCleanup=setInterval(async()=>{try{
+ await db.query("delete from linebot_private.pairing_codes where id in (select id from linebot_private.pairing_codes where expires_at<now()-interval '1 day' limit 500)");
+ await db.query("delete from linebot_private.notifications where id in (select id from linebot_private.notifications where created_at<now()-interval '30 days' limit 500)");
+ await db.query("delete from linebot_private.request_limits where (scope like 'notify:%' or scope like 'pairing:%') and window_start<now()-interval '1 day'");
+ }catch{console.error('Notification cleanup failed');}},60*60*1000);
+notificationCleanup.unref();
+const shutdown=()=>{clearInterval(cleanup);clearInterval(notificationCleanup);server.close(()=>db.end());};
 process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);

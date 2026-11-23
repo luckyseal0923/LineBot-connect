@@ -2,7 +2,7 @@
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -57,6 +57,25 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(typeof data.botId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.botId)){send(res,400,{error:'請選擇要停用的 LINE Bot。'});return true;}
         if(!await bots.disable(user.id,data.botId)){send(res,404,{error:'找不到 LINE Bot。'});return true;}
         send(res,200,{message:'已停用'});return true;
+      }
+      if(path.startsWith('/independent-api/notification') || path.startsWith('/independent-api/recipient')) {
+        if(!notifications){send(res,503,{error:'通知功能尚未開放。'});return true;}
+        const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
+        if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
+        if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id)});return true;}
+        if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id)});return true;}
+        if(path==='/independent-api/recipient/pair'&&req.method==='POST'){
+          if(!await allow('pairing')||!await allow(`pairing:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
+          const data=await read(req),result=await notifications.createPairing(user.id,data.botId,data.label);
+          send(res,result?200:400,result||{error:'請選擇自己的啟用中 Bot 並填寫名稱。'});return true;
+        }
+        if(path==='/independent-api/recipient/disable'&&req.method==='POST'){
+          const data=await read(req),ok=await notifications.disable(user.id,data.recipientId);send(res,ok?200:404,ok?{message:'已移除收件對象。'}:{error:'找不到收件對象。'});return true;
+        }
+        if(path==='/independent-api/notification/send'&&req.method==='POST'){
+          if(!await allow('notify')||!await allow(`notify:${user.id}`)){send(res,429,{error:'發送過於頻繁，請稍後再試。'});return true;}
+          const result=await notifications.send(user.id,await read(req));send(res,result.error?400:200,result.error?{error:'訊息或收件對象不正確。'}:result);return true;
+        }
       }
       send(res,404,{error:'找不到功能'});return true;
     } catch {send(res,503,{error:'服務暫時無法使用'});return true;}

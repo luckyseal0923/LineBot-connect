@@ -21,7 +21,7 @@ export function createBotStore({ db, vault, tokenVault }) {
       return result.rows.length===1;
     },
     async findByWebhook(webhookKey) {
-      const result = await db.query(`select a.id as "userId", b.encrypted_secret as "encryptedSecret", b.enabled, b.bot_user_id as "botUserId"
+      const result = await db.query(`select b.id, a.id as "userId", b.encrypted_secret as "encryptedSecret", b.enabled, b.bot_user_id as "botUserId"
         from linebot_private.accounts a join linebot_private.bot_credentials b on b.account_id=a.id
         where b.webhook_key=$1 and a.status='active' and b.enabled=true`, [webhookKey]);
       return result.rows[0] || null;

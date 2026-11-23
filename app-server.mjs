@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin}) {
- const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin});
- const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:eventStore});
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications}) {
+ const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications});
+ const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
  const root=fileURLToPath(new URL('./public/',import.meta.url));
  const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/styles.css',['styles.css','text/css; charset=utf-8']]]);
  const headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
