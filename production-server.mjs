@@ -7,12 +7,14 @@ import { createEventStore } from './event-store.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
 import { createLineBotLookup } from './line-client.mjs';
 import { createLinebotServer } from './app-server.mjs';
+import { createVerifiedDatabaseConfig,requireEncryptedDatabaseConnection } from './db-tls-config.mjs';
 
 const { LINEBOT_DATABASE_URL, LINEBOT_ENCRYPTION_KEY, PUBLIC_ORIGIN }=process.env;
 if(!LINEBOT_DATABASE_URL || !/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ENCRYPTION_KEY || '') || !PUBLIC_ORIGIN) throw Error('LineBOT configuration is incomplete');
 const key=Buffer.from(LINEBOT_ENCRYPTION_KEY,'base64');
-const db=new pg.Pool({connectionString:LINEBOT_DATABASE_URL,max:2,connectionTimeoutMillis:5000,idleTimeoutMillis:10000,statement_timeout:5000,application_name:'linebot_connection'});
+const db=new pg.Pool(createVerifiedDatabaseConfig(LINEBOT_DATABASE_URL,process.env.LINEBOT_DB_CA_CERT_BASE64,{max:2,connectionTimeoutMillis:5000,idleTimeoutMillis:10000,statement_timeout:5000,application_name:'linebot_connection'}));
 db.on('error',()=>console.error('Idle database connection closed'));
+await requireEncryptedDatabaseConnection(db);
 const identity=await db.query(`select current_user as name, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls from pg_roles where rolname=current_user`);
 const role=identity.rows[0];
 if(!role || role.rolsuper || role.rolcreaterole || role.rolcreatedb || role.rolreplication || role.rolbypassrls) throw Error('Unsafe database role');

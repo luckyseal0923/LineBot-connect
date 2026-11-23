@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile.production
     environment:
       LINEBOT_DATABASE_URL: ${LINEBOT_DATABASE_URL:?Set the restricted runtime database URL}
+      LINEBOT_DB_CA_CERT_BASE64: ${LINEBOT_DB_CA_CERT_BASE64:?Set the database CA certificate}
       LINEBOT_ENCRYPTION_KEY: ${LINEBOT_ENCRYPTION_KEY:?Set the encryption key}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the HTTPS site origin}
     networks: [edge, linebot_private]
@@ -23,6 +24,7 @@ services:
       dockerfile: Dockerfile.admin
     environment:
       LINEBOT_ADMIN_AUTH_DATABASE_URL: ${LINEBOT_ADMIN_AUTH_DATABASE_URL:?Set the restricted admin-auth database URL}
+      LINEBOT_DB_CA_CERT_BASE64: ${LINEBOT_DB_CA_CERT_BASE64:?Set the database CA certificate}
       LINEBOT_REVIEW_DATABASE_URL: ${LINEBOT_REVIEW_DATABASE_URL:?Set the restricted review database URL}
       LINEBOT_ADMIN_ENCRYPTION_KEY: ${LINEBOT_ADMIN_ENCRYPTION_KEY:?Set the separate administrator encryption key}
       ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set the HTTPS administrator origin}
