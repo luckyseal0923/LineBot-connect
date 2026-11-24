@@ -2,7 +2,7 @@
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, sourceSetupPlatformId }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -124,7 +124,8 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
         if (!integrations) { send(res, 503, { error: '外部串接尚未開放。' }); return true; }
         if (req.method === 'GET' && !integrationAction) {
-          send(res, 200, { integrations: await integrations.list(user.id,await platformBot(user)), endpoint: new URL('/api/v1/send', origin).href });
+          send(res, 200, { integrations: await integrations.list(user.id,await platformBot(user)), endpoint: new URL('/api/v1/send', origin).href,
+            ...(sourceSetupPlatformId === requestedPlatform ? { guidedSetup: true } : {}) });
           return true;
         }
         if (req.method !== 'POST') {

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教具借用平台 · 串接試辦</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/loan.js"></script>
+</head>
+<body class="loan-preview">
+  <header class="site-header">
+    <div class="header-inner">
+      <span class="brand"><span class="brand-mark" aria-hidden="true">借</span><strong>教具借用平台</strong></span>
+      <a id="hub-link" class="button button-secondary" hidden>回接線站</a>
+    </div>
+  </header>
+  <main class="workspace-shell">
+    <div class="loan-page">
+      <div class="page-heading">
+        <div><h1>測試借用單</h1><p>核准借用後，系統會將通知送往已連接的接線站。</p></div>
+        <span class="chip chip-warning">試辦環境</span>
+      </div>
+      <p class="feedback flash-banner" id="loan-feedback" role="status"></p>
+      <div class="workspace-columns">
+        <section class="panel" aria-labelledby="loan-title">
+          <div class="section-heading">
+            <h2 id="loan-title">教具借用申請</h2>
+            <span class="chip" id="loan-state"></span>
+          </div>
+          <dl class="definition-grid loan-facts">
+            <div><dt>借用單編號</dt><dd id="loan-number">正在查詢…</dd></div>
+            <div><dt>借用教具</dt><dd>急救訓練模型</dd></div>
+            <div><dt>申請單位</dt><dd>示範教學組</dd></div>
+          </dl>
+          <div class="button-row loan-actions">
+            <button class="button button-primary" id="loan-approve" type="button" disabled>核准借用</button>
+            <button class="button button-secondary" id="loan-new" type="button" disabled>新增測試單</button>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="receipt-title">
+          <h2 id="receipt-title">模擬 LINE 收件匣</h2>
+          <div class="loan-inbox" id="loan-inbox" role="status"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer class="site-footer">串接試辦 · 測試資料</footer>
+</body>
+</html>

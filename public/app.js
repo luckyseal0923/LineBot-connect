@@ -9,7 +9,7 @@ const accountLink = document.querySelector('#account-link');
 const guestLink = document.querySelector('#guest-link');
 const logoutButton = document.querySelector('#logout-button');
 const consoleUrl = 'https://developers.line.biz/console/';
-const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages']);
+const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages', 'connect']);
 const pages = new Set(['platforms', 'account', 'register', ...workspacePages]);
 const webhookChecks = new Map();
 const stamp = new Intl.DateTimeFormat('zh-TW', {
@@ -71,7 +71,7 @@ function platformName(platform) {
 }
 
 async function api(path, { data, signal, unscoped = false } = {}) {
-  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?)(?:\?|$)/.test(path);
+  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?|source-setup(?:\/.*)?)(?:\?|$)/.test(path);
   if (currentPlatform && scoped && !unscoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   const response = await fetch('/independent-api/' + path, {
     method: data === undefined ? 'GET' : 'POST',
@@ -164,7 +164,7 @@ function setLayout(state, page, user) {
   guestLink.textContent = page === 'register' ? '返回登入' : '申請帳號';
   for (const link of navigation.querySelectorAll('[data-page]')) {
     link.href = workspaceLink('#' + link.dataset.page);
-    if (link.dataset.page === page) link.setAttribute('aria-current', 'page');
+    if (link.dataset.page === (page === 'connect' ? 'integrations' : page)) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
 }
@@ -248,6 +248,7 @@ async function render({ openPlatformsIfApproved = false } = {}) {
     if (page === 'recipients') await renderRecipients(signal);
     if (page === 'messages') await renderMessages(signal);
     if (page === 'integrations') await renderIntegrations(signal);
+    if (page === 'connect') await renderSourceSetup(signal);
   }
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
@@ -1038,10 +1039,36 @@ async function renderRecipients(signal) {
   });
 }
 
+async function renderSourceSetup(signal) {
+  const back = buttonLink('返回事件串接', '#integrations', 'secondary');
+  view.innerHTML = pageHeading('串接精靈', '跟著步驟完成連接，並從原平台試送一筆。', back) +
+    '<div id="source-setup-view"><p class="page-loading" role="status">正在查詢可連接的來源…</p></div>';
+  const mount = view.querySelector('#source-setup-view');
+  try {
+    const state = await api('source-setup', { signal });
+    if (signal.aborted) return;
+    if (!state.source) {
+      mount.innerHTML = `<section class="panel">${emptyState('目前沒有可選的試辦來源',
+        '在教具借用平台可體驗一次授權。', buttonLink('選擇數位平台', '#platforms'))}</section>`;
+      return;
+    }
+    const { mountSourceWizard } = await import('/source-wizard.js');
+    if (!signal.aborted) mountSourceWizard({
+      mount, state, signal, api, escapeHtml, report,
+      messagesHref: workspaceLink('#messages'),
+      overviewHref: workspaceLink('#overview'),
+      recipientsHref: workspaceLink('#recipients'),
+      confirmDisconnect: () => confirmAction('斷開來源平台', '斷開後，這個來源的通知將停止發送。', '確認斷開', signal)
+    });
+  } catch (error) {
+    if (!signal.aborted) showPageError(mount, error.status === 404 ? '此環境尚未開放串接精靈。' : error.message);
+  }
+}
+
 async function renderIntegrations(signal) {
   const platform = currentPlatform;
   view.innerHTML = pageHeading('事件串接', '為這個平台的每種事件指定收件者及專用金鑰。',
-    buttonLink('查看發送紀錄', '#messages', 'secondary')) +
+    `<div class="button-row" id="integration-page-actions">${buttonLink('查看發送紀錄', '#messages', 'secondary')}</div>`) +
     '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
   const workspace = view.querySelector('#integration-workspace');
   let initial, recipients;
@@ -1052,6 +1079,9 @@ async function renderIntegrations(signal) {
     return;
   }
   if (signal.aborted) return;
+  if (initial.guidedSetup) {
+    view.querySelector('#integration-page-actions').insertAdjacentHTML('afterbegin', buttonLink('開始串接', '#connect'));
+  }
 
   const path = 'integrations';
   const recipientOptions = selected => option('', '請選擇收件對象') + recipients.map(recipient =>

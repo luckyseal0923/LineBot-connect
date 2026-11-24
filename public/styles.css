@@ -505,6 +505,77 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .instructions { margin: .65rem 0 .95rem; padding-inline-start: 1.25rem; color: var(--muted); }
 .instructions li + li { margin-top: .36rem; }
 
+.source-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(14rem, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.source-progress { margin-bottom: 1rem; }
+.source-step > p { margin-top: .55rem; }
+.source-step > .button-row, .source-step .wizard-actions { margin-top: 1rem; }
+.source-provider {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #a5cbb9;
+  border-radius: .7rem;
+  background: #f3faf5;
+}
+.source-provider strong { color: var(--deep); }
+.source-provider .small { margin-top: .15rem; }
+.source-summary { background: #f7fbf8; }
+.source-flow { display: grid; gap: .65rem; margin: .7rem 0 0; padding: 0; list-style: none; }
+.source-flow li {
+  position: relative;
+  display: grid;
+  gap: .12rem;
+  padding: .48rem .7rem;
+  border-left: 2px solid #77a78b;
+  border-radius: .35rem;
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}
+.source-flow li + li::before {
+  content: "";
+  position: absolute;
+  width: 1px;
+  height: .59rem;
+  left: .8rem;
+  top: -.64rem;
+  background: #9fb8ad;
+}
+.source-flow span { color: var(--muted); font-size: .78rem; }
+.source-flow strong { font-size: .94rem; }
+.source-delivery { margin-top: .85rem; }
+.source-delivery ul { margin: 0; padding: 0; list-style: none; }
+.source-delivery li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .5rem;
+  padding: .53rem .65rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .87rem;
+}
+.source-delivery li strong { text-align: right; font-weight: 650; color: var(--muted); }
+.source-delivery li[data-complete="true"] strong { color: var(--green); }
+.source-management { margin-top: .55rem; }
+.loan-page { width: min(100%, 69rem); justify-self: center; }
+.loan-facts { margin-block: .7rem 1rem; }
+.loan-actions { margin-top: .85rem; }
+.loan-inbox {
+  margin-top: .72rem;
+  padding: .8rem;
+  border: 1px solid var(--border);
+  border-radius: .62rem;
+  background: #f3faf5;
+}
+.loan-inbox p { margin-top: .32rem; color: var(--muted); }
+.loan-inbox .loan-message { color: var(--ink); }
+
 .record-list { margin: 0; padding: 0; list-style: none; }
 .record-list li {
   display: grid;
