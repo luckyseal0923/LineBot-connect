@@ -1,0 +1,65 @@
+.equipment-preview .brand-mark { background: #215854; }
+.equipment-shell { grid-template-columns: 10.5rem minmax(0, 1fr); }
+.equipment-sidebar { background: #214744; }
+.equipment-sidebar a { justify-content: space-between; gap: .35rem; }
+#review-count { font-variant-numeric: tabular-nums; }
+.equipment-choice { min-width: 0; width: 100%; margin: 0; padding: 0; border: 0; }
+.equipment-choice legend { margin: 0 0 .55rem; padding: 0; font-weight: 720; }
+.equipment-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .62rem; }
+.equipment-grid label {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  padding: .85rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: .72rem;
+  background: var(--surface);
+}
+.equipment-grid label:hover, .equipment-grid label:has(:checked) {
+  border-color: #9abdac;
+  background: #edf8f1;
+}
+.equipment-grid label input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: .15rem 0 0;
+  flex: 0 0 auto;
+  accent-color: #16644f;
+}
+.equipment-grid label strong { display: block; margin-block: .18rem .26rem; overflow-wrap: anywhere; }
+.equipment-grid label span span { display: block; }
+.borrow-fields {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(13rem, 1.3fr);
+  gap: .75rem;
+  width: 100%;
+  margin-top: .3rem;
+}
+.equipment-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(13.5rem, 1fr);
+  gap: .9rem;
+  align-items: start;
+}
+.borrow-card {
+  padding: .75rem 0;
+  border-top: 1px solid var(--border);
+}
+.borrow-card .section-heading { align-items: start; margin-bottom: .3rem; }
+.borrow-card .section-heading h3, .receipt-item { overflow-wrap: anywhere; }
+.borrow-card .button-row { margin-top: .55rem; }
+.borrow-card .chip { justify-self: start; }
+.borrow-note { margin-top: .3rem; }
+.equipment-receipts { background: #f7fbf8; }
+.receipt-list { display: grid; gap: .5rem; margin: .65rem 0 0; padding: 0; list-style: none; }
+.receipt-item {
+  padding: .7rem;
+  border: 1px solid #c4dbcf;
+  border-radius: .55rem;
+  background: #fff;
+}
+.receipt-item strong { color: #19593f; }
+.receipt-item p { margin-top: .22rem; }
+.equipment-empty { margin-top: .55rem; }

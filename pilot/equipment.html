@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教具借用平台 · 本機測試</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/equipment.css">
+  <script type="module" src="/equipment.js"></script>
+</head>
+<body class="equipment-preview">
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#request" class="brand"><span class="brand-mark" aria-hidden="true">借</span><strong>教具借用平台</strong></a>
+      <div class="button-row">
+        <span class="chip chip-neutral" id="connection-state">正在確認接線狀態</span>
+        <a id="station-link" class="button button-secondary" hidden>回接線站</a>
+      </div>
+    </div>
+  </header>
+  <div class="workspace-shell equipment-shell">
+    <aside class="sidebar equipment-sidebar">
+      <nav aria-label="教具借用作業">
+        <a href="#request" data-page="request" aria-current="page">借用申請</a>
+        <a href="#review" data-page="review">借用審核 <span id="review-count"></span></a>
+      </nav>
+    </aside>
+    <main id="equipment-view">
+      <p class="feedback flash-banner" id="equipment-feedback" role="status"></p>
+      <section id="request-page" aria-labelledby="request-heading">
+        <div class="page-heading">
+          <div><h1 id="request-heading">借用申請</h1><p>選一項教具，送出後可在「借用審核」核准。</p></div>
+          <span class="chip chip-warning">本機測試</span>
+        </div>
+        <form id="borrowing-form" class="panel form-stack">
+          <fieldset class="equipment-choice">
+            <legend>選擇教具</legend>
+            <div class="equipment-grid" id="equipment-list"><p role="status">正在載入教具…</p></div>
+          </fieldset>
+          <div class="borrow-fields">
+            <label>借用單位<input name="unit" value="示範教學組" required maxlength="40"></label>
+            <label>借用用途（選填）<input name="purpose" placeholder="例如 急救訓練課程" maxlength="120"></label>
+          </div>
+          <button class="button button-primary" id="submit-request" type="submit" disabled>送出借用申請</button>
+        </form>
+      </section>
+      <section id="review-page" aria-labelledby="review-heading" hidden>
+        <div class="page-heading">
+          <div><h1 id="review-heading">借用審核</h1><p>核准借用後，可在右側查看對應的模擬 LINE 通知。</p></div>
+          <a href="#request" class="button button-secondary">新增借用申請</a>
+        </div>
+        <div class="equipment-review-layout">
+          <section class="panel" aria-labelledby="loan-list-heading">
+            <div class="section-heading"><h2 id="loan-list-heading">借用單</h2><span class="muted small" id="loan-count"></span></div>
+            <div id="borrow-requests"></div>
+          </section>
+          <section class="panel equipment-receipts" aria-labelledby="inbox-heading">
+            <h2 id="inbox-heading">模擬 LINE 收件匣</h2>
+            <div id="borrow-inbox" aria-live="polite"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <footer class="site-footer">教具借用平台 · 示範資料</footer>
+</body>
+</html>

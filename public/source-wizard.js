@@ -7,6 +7,8 @@ function stageFor(connection) {
 
 export function mountSourceWizard({ mount, state, signal, api, escapeHtml, report, messagesHref, overviewHref, recipientsHref, confirmDisconnect }) {
   const { source } = state;
+  const instructions = source.instructions || '到教具借用平台核准測試單後，可在這裡查看接線進度。';
+  const startAction = source.startAction || '前往原平台核准測試單';
   let stage = stageFor(state.connection);
   let selectedRecipient = state.connection?.recipientId || (state.recipients.length === 1 ? state.recipients[0].id : '');
   let busy = false;
@@ -74,11 +76,11 @@ export function mountSourceWizard({ mount, state, signal, api, escapeHtml, repor
   function renderTest() {
     return `<div class="section-heading"><h2 id="source-step-heading" tabindex="-1">用一筆測試借用單確認</h2>
         <span class="chip chip-success" id="source-test-badge">已完成授權</span></div>
-      <p class="muted" id="source-test-instructions">到教具借用平台核准測試單後，可在這裡查看接線進度。</p>
+      <p class="muted" id="source-test-instructions">${escapeHtml(instructions)}</p>
       <div id="source-delivery" class="source-delivery" role="status"></div>
       <div class="button-row">
         <a class="button button-primary" id="source-finish" href="${escapeHtml(overviewHref)}" hidden>完成，回平台總覽</a>
-        <a class="button button-primary" id="source-test-link" href="${escapeHtml(source.href)}">前往原平台核准測試單</a>
+        <a class="button button-primary" id="source-test-link" href="${escapeHtml(source.href)}">${escapeHtml(startAction)}</a>
         <a class="button button-secondary" href="${escapeHtml(messagesHref)}">查看發送紀錄</a>
       </div>
       <div class="source-management">
@@ -97,10 +99,10 @@ export function mountSourceWizard({ mount, state, signal, api, escapeHtml, repor
     mount.querySelector('#source-test-badge').textContent = accepted ? '測試成功' : '已完成授權';
     mount.querySelector('#source-test-instructions').textContent = accepted
       ? '測試借用單已觸發通知，可以回平台總覽查看這條路線。'
-      : '到教具借用平台核准測試單後，可在這裡查看接線進度。';
+      : instructions;
     mount.querySelector('#source-finish').hidden = !accepted;
     const testLink = mount.querySelector('#source-test-link');
-    testLink.textContent = accepted ? '回原平台查看測試單' : '前往原平台核准測試單';
+    testLink.textContent = accepted ? '回原平台查看借用單' : startAction;
     testLink.classList.toggle('button-primary', !accepted);
     testLink.classList.toggle('button-secondary', accepted);
     const parts = [

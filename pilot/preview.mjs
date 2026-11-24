@@ -125,7 +125,7 @@ export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
       accounts, platforms, notifications, integrations, db, allow, origin, source, demoSession
     });
     loanSource = createLoanSource({
-      origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/#connect?platform=' + supported.id,
+      origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/independent-api/source-setup/preview',
       serviceSecret: source.secret, inbox
     });
     hub = createLinebotServer({

@@ -8,7 +8,11 @@ export function createSourceSetup({ accounts, platforms, notifications, integrat
   const connections = new Map();
   const inProgress = new Set();
   const host = new URL(origin).host;
-  const sourceDetails = { name: source.name, event: source.event, href: source.origin + '/' };
+  const sourceDetails = {
+    name: source.name, event: source.event, href: source.origin + '/equipment',
+    instructions: '到教具借用平台送出一筆借用申請，再切到借用審核核准。',
+    startAction: '前往原平台新增借用申請'
+  };
 
   async function sourceRequest(path, data) {
     const response = await fetch(new URL(path, source.origin), {

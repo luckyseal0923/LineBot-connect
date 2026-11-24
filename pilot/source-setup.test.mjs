@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { setTimeout as wait } from 'node:timers/promises';
 import { startPilot } from './preview.mjs';
 
-test('an approved source sends two loan events to its selected recipient and can be disconnected', async () => {
+test('the loan source creates and approves virtual requests, sends once on the selected connection, and can be disconnected', async () => {
   const pilot = await startPilot({ port: 39263, sourcePort: 39264 });
   const { origin, sourceOrigin, supported, other, inbox } = pilot;
   const path = '/independent-api/source-setup';
@@ -28,6 +28,14 @@ test('an approved source sends two loan events to its selected recipient and can
     const source = url => fetch(sourceOrigin + url).then(response => response.json());
     const borrower = () => source('/api/loan');
     const sendApproval = id => post(sourceOrigin, '/api/approve', { id });
+    const approveVirtual = id => post(sourceOrigin, '/api/borrow/approve', { id });
+    const virtual = () => source('/api/borrow');
+    const createVirtual = async itemId => {
+      const response = await post(sourceOrigin, '/api/borrow', { itemId, unit: '示範教學組', purpose: '借用流程驗收' });
+      assert.equal(response.status, 201);
+      const { loans, created } = await response.json();
+      return loans.find(loan => loan.number === created);
+    };
     const eventPath = '/independent-api/integrations?platform=' + platform;
     const loadEvents = async () => (await readSetup(eventPath)).json();
     const recipient = supported.targets[0];
@@ -44,9 +52,18 @@ test('an approved source sends two loan events to its selected recipient and can
     assert.equal((await portal({ recipientId: recipient.id }, owner, setup, { Origin: sourceOrigin })).status, 403);
     assert.equal((await post(sourceOrigin, '/service/connect', {})).status, 401);
     assert.equal((await sendApproval((await borrower()).id)).status, 409);
+    assert.equal((await post(sourceOrigin, '/api/borrow', { itemId: 'invalid', unit: '示範教學組' })).status, 422);
+    const beforeConnection = await createVirtual('resuscitation-model');
+    assert.equal(beforeConnection.approvedAt, null);
+    const offline = await (await approveVirtual(beforeConnection.id)).json();
+    assert.equal(offline.hubHref, origin + path + '/preview');
+    assert.equal(offline.loans[0].notice, 'unconnected');
+    assert.ok(offline.loans[0].approvedAt);
+    assert.equal(inbox.size, 0);
 
     const prepared = await (await readSetup()).json();
     assert.equal(prepared.source.event, '借用核准');
+    assert.equal(prepared.source.href, sourceOrigin + '/equipment');
     assert.deepEqual(new Set(prepared.recipients.map(item => item.id)), new Set(supported.targets.map(item => item.id)));
     assert.equal(prepared.connection, null);
     assert.deepEqual((await loadEvents()).integrations, []);
@@ -64,6 +81,24 @@ test('an approved source sends two loan events to its selected recipient and can
     assert.equal((await loadEvents()).integrations.length, 1);
     assert.equal((await borrower()).connected, true);
     assert.equal((await (await readSetup()).json()).latest, null);
+    assert.equal((await virtual()).loans.find(loan => loan.id === beforeConnection.id).notice, 'unconnected');
+
+    const pending = await createVirtual('injection-arm');
+    assert.equal(pending.approvedAt, null);
+    assert.equal(inbox.size, 0);
+    const attempts = await Promise.all([approveVirtual(pending.id), approveVirtual(pending.id)]);
+    assert.ok(attempts.every(result => result.status === 200));
+    let full;
+    for (let attempt = 0; attempt < 36 && full?.notice !== 'accepted'; attempt++) {
+      await wait(80);
+      full = (await virtual()).loans.find(loan => loan.id === pending.id);
+    }
+    assert.equal(full.notice, 'accepted');
+    assert.match(full.message, new RegExp(pending.number));
+    assert.match(full.message, /靜脈注射訓練手臂/);
+    const hit = (await (await readSetup()).json()).latest;
+    assert.equal(inbox.get(hit.id).to, recipient.lineId);
+    assert.equal(inbox.size, 1);
 
     async function verifyDelivery() {
       const loan = await borrower();
@@ -84,16 +119,19 @@ test('an approved source sends two loan events to its selected recipient and can
     }
 
     await verifyDelivery();
-    assert.equal(inbox.size, 1);
+    assert.equal(inbox.size, 2);
     assert.equal((await post(sourceOrigin, '/api/new-loan', {})).status, 200);
     await verifyDelivery();
-    assert.equal(inbox.size, 2);
+    assert.equal(inbox.size, 3);
 
     const disconnected = await portal({}, owner, path + '/disconnect?platform=' + platform);
     assert.equal(disconnected.status, 200);
     assert.equal((await disconnected.json()).connection, null);
     assert.equal((await borrower()).connected, false);
     assert.equal((await loadEvents()).integrations[0].enabled, false);
+    const afterDisconnect = await createVirtual('blood-pressure');
+    assert.equal((await (await approveVirtual(afterDisconnect.id)).json()).loans[0].notice, 'unconnected');
+    assert.equal(inbox.size, 3);
 
     const changed = supported.targets[1];
     const reconnected = await portal({ recipientId: changed.id });
