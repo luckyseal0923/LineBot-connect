@@ -2,13 +2,16 @@
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
   const secure = origin.protocol === 'https:' ? '; Secure' : '';
   const cookie = token => `linebot_sid=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=28800`;
   const getToken = req => /(?:^|;\s*)linebot_sid=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
+  const botIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const webhookUrl = key => new URL(`/webhooks/line/${key}`, origin).href;
+  const publicBot = bot => ({ id: bot.id, name: bot.botName, enabled: bot.enabled, webhookUrl: webhookUrl(bot.webhookKey) });
   const send = (res,status,body,extra={}) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}); res.end(JSON.stringify(body)); };
   const read = async req => { const parts=[]; let n=0; for await(const chunk of req){n+=chunk.length;if(n>8192) throw Error('too large');parts.push(chunk);}return JSON.parse(Buffer.concat(parts).toString('utf8')); };
   return async function api(req,res) {
@@ -38,7 +41,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       if(path==='/independent-api/bots' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         const items=await bots.list(user.id);
-        send(res,200,{bots:items.map(item=>({id:item.id,name:item.botName,enabled:item.enabled,webhookUrl:new URL(`/webhooks/line/${item.webhookKey}`,origin).href}))});return true;
+        send(res,200,{bots:items.map(publicBot)});return true;
       }
       if(path==='/independent-api/bot' && req.method==='POST') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
@@ -47,14 +50,34 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(typeof data.channelSecret!=='string'||!data.channelSecret.trim()||Buffer.byteLength(data.channelSecret)>4096){send(res,400,{error:'請輸入 Channel secret'});return true;}
         if(typeof data.accessToken!=='string'||!data.accessToken||Buffer.byteLength(data.accessToken)>4096){send(res,400,{error:'請輸入 Channel access token'});return true;}
         const bot=await lookupBot(data.accessToken);if(!bot){send(res,400,{error:'無法驗證 LINE Bot 憑證。'});return true;}
-        try {const saved=await bots.save(user.id,data.channelSecret,data.accessToken,bot);if(!saved){send(res,409,{error:'此 LINE Bot 已綁定其他帳號。'});return true;}}
-        catch(error){if(error?.code==='23505'){send(res,409,{error:'此 LINE Bot 已綁定其他帳號。'});return true;}throw error;}
-        send(res,200,{message:'LINE Bot 憑證已儲存，請在 LINE Developers 驗證 Webhook。'});return true;
+        let saved;
+        try { saved = await bots.save(user.id, data.channelSecret, data.accessToken, bot); }
+        catch (error) { if (error?.code !== '23505') throw error; }
+        if (!saved) { send(res, 409, { error: '此 LINE Bot 已綁定其他帳號。' }); return true; }
+        send(res, 200, { message: 'LINE Bot 憑證已儲存，請在 LINE Developers 驗證 Webhook。', bot: publicBot(saved) });
+        return true;
+      }
+      if (path === '/independent-api/bot/webhook-check' && req.method === 'POST' && checkWebhook) {
+        const user = await accounts.me(getToken(req));
+        if (!user) { send(res, 401, { error: '請先登入。' }); return true; }
+        if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
+        const { botId } = await read(req);
+        if (typeof botId !== 'string' || !botIdPattern.test(botId)) {
+          send(res, 400, { error: '請選擇啟用中的 LINE Bot。' }); return true;
+        }
+        const bot = await bots.webhookCheckCredentials(user.id, botId);
+        if (!bot) { send(res, 404, { error: '找不到可檢查的 LINE Bot。請確認 Bot 已啟用並儲存憑證。' }); return true; }
+        if (!await allow('webhook-check') || !await allow(`webhook-check:${botId.toLowerCase()}`)) {
+          send(res, 429, { error: '檢查過於頻繁，請稍後再試。' }); return true;
+        }
+        const status = await checkWebhook(bot.accessToken, webhookUrl(bot.webhookKey));
+        send(res, 200, { status, checkedAt: new Date().toISOString() });
+        return true;
       }
       if(path==='/independent-api/bot/disable' && req.method==='POST') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         const data=await read(req);
-        if(typeof data.botId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.botId)){send(res,400,{error:'請選擇要停用的 LINE Bot。'});return true;}
+        if(typeof data.botId!=='string'||!botIdPattern.test(data.botId)){send(res,400,{error:'請選擇要停用的 LINE Bot。'});return true;}
         if(!await bots.disable(user.id,data.botId)){send(res,404,{error:'找不到 LINE Bot。'});return true;}
         send(res,200,{message:'已停用'});return true;
       }

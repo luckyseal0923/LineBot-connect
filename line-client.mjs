@@ -10,3 +10,30 @@ export function createLineBotLookup({ fetchImpl = fetch } = {}) {
   return {userId:info.userId,displayName:info.displayName};
  };
 }
+
+export function createLineWebhookCheck({ fetchImpl = fetch } = {}) {
+  return async function check(accessToken, expectedUrl) {
+    if (!accessToken || /[\r\n]/.test(accessToken)) return 'unavailable';
+    const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+    const options = { headers, redirect: 'error', signal: AbortSignal.timeout(10000) };
+    try {
+      const config = await fetchImpl('https://api.line.me/v2/bot/channel/webhook/endpoint', options);
+      if (config.status === 404) return 'not_configured';
+      if (!config.ok) return 'unavailable';
+      const { endpoint, active } = await config.json();
+      if (typeof endpoint !== 'string' || typeof active !== 'boolean') return 'unavailable';
+      if (new URL(endpoint).href !== expectedUrl) return 'url_mismatch';
+
+      const test = await fetchImpl('https://api.line.me/v2/bot/channel/webhook/test', {
+        ...options, method: 'POST', body: JSON.stringify({ endpoint: expectedUrl })
+      });
+      if (!test.ok) return 'unavailable';
+      const { success } = await test.json();
+      if (typeof success !== 'boolean') return 'unavailable';
+      if (!success) return 'failed';
+      return active ? 'verified' : 'verified_inactive';
+    } catch {
+      return 'unavailable';
+    }
+  };
+}

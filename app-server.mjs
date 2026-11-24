@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications}) {
- const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications});
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook}) {
+ const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook});
  const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
  const root=fileURLToPath(new URL('./public/',import.meta.url));
  const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/styles.css',['styles.css','text/css; charset=utf-8']]]);

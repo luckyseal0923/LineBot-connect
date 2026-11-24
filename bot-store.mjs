@@ -8,9 +8,10 @@ export function createBotStore({ db, vault, tokenVault }) {
         select id,$2,$3,$4::jsonb,$5::jsonb,true from linebot_private.accounts where id=$1 and status='active'
         on conflict (bot_user_id) do update set bot_name=excluded.bot_name,encrypted_secret=excluded.encrypted_secret,
         encrypted_access_token=excluded.encrypted_access_token,enabled=true,updated_at=now()
-        where linebot_private.bot_credentials.account_id=excluded.account_id returning account_id`,
+        where linebot_private.bot_credentials.account_id=excluded.account_id
+        returning id,bot_name as "botName",webhook_key as "webhookKey",enabled`,
         [accountId,bot.userId,bot.displayName,JSON.stringify(encrypted),JSON.stringify(encryptedToken)]);
-      return result.rows.length===1;
+      return result.rows[0] || null;
     },
     async list(accountId) {
       const result=await db.query(`select id,bot_name as "botName",webhook_key as "webhookKey",enabled from linebot_private.bot_credentials where account_id=$1 order by bot_name,id`,[accountId]);
@@ -19,6 +20,14 @@ export function createBotStore({ db, vault, tokenVault }) {
     async disable(accountId, botId) {
       const result=await db.query('update linebot_private.bot_credentials set enabled=false,updated_at=now() where account_id=$1 and id=$2 returning id', [accountId,botId]);
       return result.rows.length===1;
+    },
+    async webhookCheckCredentials(accountId, botId) {
+      const { rows } = await db.query(`select b.webhook_key, b.encrypted_access_token
+        from linebot_private.bot_credentials b join linebot_private.accounts a on a.id=b.account_id
+        where b.account_id=$1 and b.id=$2 and b.enabled and a.status='active'`, [accountId, botId]);
+      const bot = rows[0];
+      if (!bot || !bot.encrypted_access_token) return null;
+      return { webhookKey: bot.webhook_key, accessToken: tokenVault.open(accountId, bot.encrypted_access_token) };
     },
     async findByWebhook(webhookKey) {
       const result = await db.query(`select b.id, a.id as "userId", b.encrypted_secret as "encryptedSecret", b.enabled, b.bot_user_id as "botUserId"

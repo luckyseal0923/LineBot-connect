@@ -28,8 +28,8 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
   if(!uuid.test(bot||'')||typeof label!=='string'||!label.trim()||label.trim().length>80)return null;
   const code=randomBytes(16).toString('hex');
   const result=await db.query(`insert into linebot_private.pairing_codes(account_id,bot_id,code_hash,label,expires_at)
-   select $1,id,$3,$4,now()+interval '10 minutes' from linebot_private.bot_credentials where id=$2 and account_id=$1 and enabled=true returning id`,[account,bot,digest(code),label.trim()]);
-  return result.rowCount?{message:`綁定 ${code}`,expiresMinutes:10}:null;
+   select $1,id,$3,$4,now()+interval '10 minutes' from linebot_private.bot_credentials where id=$2 and account_id=$1 and enabled=true returning expires_at`,[account,bot,digest(code),label.trim()]);
+  return result.rowCount?{message:`綁定 ${code}`,expiresMinutes:10,expiresAt:result.rows[0].expires_at}:null;
  }
  async function list(account){return (await db.query(`select r.id,r.bot_id as "botId",r.label,b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and r.active and b.enabled order by r.created_at desc limit 200`,[account])).rows;}
  async function disable(account,id){if(!uuid.test(id||''))return false;return (await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where id=$1 and account_id=$2 and active returning id",[id,account])).rowCount===1;}

@@ -20,7 +20,9 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
   await db.exec(await readFile(new URL('./db/011_multiple_bots.sql',import.meta.url),'utf8'));
   const key=randomBytes(32),vault=createCredentialVault(key),events=createEventStore({db,vault:createCredentialVault(key,{context:'line-event',maxBytes:1048576})});
   const accounts=createAccounts({db}),bots=createBotStore({db,vault,tokenVault:createCredentialVault(Buffer.alloc(32,1),{context:'channel-access-token'})}),allow=createRequestLimiter({db});
-  const origin='http://127.0.0.1:39180';server=createLinebotServer({accounts,bots,vault,eventStore:events,allow,lookupBot:async token=>({userId:'U'+({'token-b':'b','token-c':'c'}[token]||'a').repeat(32),displayName:'test bot'}),publicOrigin:origin});
+  const checked=[];
+  const origin='http://127.0.0.1:39180';server=createLinebotServer({accounts,bots,vault,eventStore:events,allow,lookupBot:async token=>({userId:'U'+({'token-b':'b','token-c':'c'}[token]||'a').repeat(32),displayName:'test bot'}),publicOrigin:origin,
+    checkWebhook:async (token,url)=>{checked.push({token,url});return 'verified';}});
   await new Promise(resolve=>server.listen(39180,'127.0.0.1',resolve));
   const post=(path,data,cookie)=>fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(data)});
   for(const user of ['alice_a','bob_b'])assert.equal((await post('/independent-api/register',{username:user,displayName:user,password:'a secure password'})).status,201);
@@ -30,7 +32,10 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
   await db.exec("update linebot_private.accounts set status='active'");
   const session=async user=>{const r=await post('/independent-api/login',{username:user,password:'a secure password'});return r.headers.get('set-cookie').split(';')[0];};
   const a=await session('alice_a'),b=await session('bob_b');
-  assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},a)).status,200);
+  const save=await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},a);
+  assert.equal(save.status,200);
+  const {bot:savedBot}=await save.json();
+  assert.deepEqual(Object.keys(savedBot).sort(),['enabled','id','name','webhookUrl']);
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},b)).status,409);
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-b',accessToken:'token-b'},b)).status,200);
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-c',accessToken:'token-c'},a)).status,200);
@@ -46,6 +51,14 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
   const send=(url,signature)=>fetch(url,{method:'POST',headers:{'x-line-signature':signature,'Content-Type':'application/json'},body});
   assert.equal((await send(bb.webhookUrl,sig('secret-a'))).status,401);
   const keyA=alice.find(x=>x.id===(botA.botUserId.endsWith('a'.repeat(32))?aa.id:ac.id));
+  assert.deepEqual(savedBot,keyA);
+  const checkPath='/independent-api/bot/webhook-check';
+  assert.equal((await post(checkPath,{botId:keyA.id},b)).status,404);
+  assert.equal((await post(checkPath,{botId:keyA.id})).status,401);
+  const check=await post(checkPath,{botId:keyA.id},a);
+  assert.equal(check.status,200);
+  assert.equal((await check.json()).status,'verified');
+  assert.deepEqual(checked,[{token:'token-a',url:keyA.webhookUrl}]);
   assert.equal((await send(keyA.webhookUrl,sig('secret-a'))).status,200);
   assert.equal((await send(keyA.webhookUrl,sig('secret-a'))).status,200);
   let saved=(await db.query('select * from linebot_private.webhook_events')).rows;
@@ -58,6 +71,7 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
   const keyC=alice.find(x=>x.id!==keyA.id);
   assert.equal((await send(keyC.webhookUrl,sig('secret-c'))).status,200);
   await post('/independent-api/bot/disable',{botId:keyA.id},a);
+  assert.equal((await post(checkPath,{botId:keyA.id},a)).status,404);
   assert.equal((await send(keyA.webhookUrl,sig('secret-a'))).status,404);
   assert.equal((await send(keyC.webhookUrl,sig('secret-c'))).status,200);
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await db.close();}

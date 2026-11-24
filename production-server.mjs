@@ -5,7 +5,7 @@ import { createCredentialVault } from './line-webhook.mjs';
 import { createBotStore } from './bot-store.mjs';
 import { createEventStore } from './event-store.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
-import { createLineBotLookup } from './line-client.mjs';
+import { createLineBotLookup, createLineWebhookCheck } from './line-client.mjs';
 import { createLinebotServer } from './app-server.mjs';
 import { createVerifiedDatabaseConfig,requireEncryptedDatabaseConnection } from './db-tls-config.mjs';
 import { createNotifications } from './notifications.mjs';
@@ -27,7 +27,7 @@ const events=createEventStore({db,vault:createCredentialVault(key,{context:'line
 const bots=createBotStore({db,vault,tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
 const notifications=createNotifications({db,key,recipientVault:createCredentialVault(key,{context:'line-recipient'}),tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
 const pollLineQuota=createLineQuotaPoller({db,tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
-const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow:createRequestLimiter({db}),lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications});
+const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow:createRequestLimiter({db}),lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck()});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('LineBOT service ready'));
 const cleanup=setInterval(()=>db.query('select linebot_private.purge_expired_events()').catch(()=>console.error('Event cleanup failed')),60*60*1000);
 cleanup.unref();

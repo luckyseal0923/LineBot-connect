@@ -30,11 +30,15 @@ test('restricted runtime can add and isolate multiple bots after migration',asyn
   const other=(await db.query("insert into linebot_private.accounts(username,display_name,password_salt,password_hash,status) values('other','Other','salt','hash','active') returning id")).rows[0].id;
   await db.exec('set role linebot_runtime');
   const key=randomBytes(32),bots=createBotStore({db,vault:createCredentialVault(key),tokenVault:createCredentialVault(key,{context:'channel-access-token'})});
-  assert.equal(await bots.save(owner,'secret-one','token-one',{userId:'U'+'1'.repeat(32),displayName:'one'}),true);
-  assert.equal(await bots.save(owner,'secret-two','token-two',{userId:'U'+'2'.repeat(32),displayName:'two'}),true);
+  const first=await bots.save(owner,'secret-one','token-one',{userId:'U'+'1'.repeat(32),displayName:'one'});
+  const second=await bots.save(owner,'secret-two','token-two',{userId:'U'+'2'.repeat(32),displayName:'two'});
+  assert.notEqual(first.id,second.id);
+  const updated=await bots.save(owner,'replacement','replacement-token',{userId:'U'+'1'.repeat(32),displayName:'one'});
+  assert.equal(updated.id,first.id);
+  assert.equal(updated.webhookKey,first.webhookKey);
   const items=await bots.list(owner);assert.equal(items.length,2);assert.notEqual(items[0].webhookKey,items[1].webhookKey);
   assert.equal(await bots.disable(other,items[0].id),false);
-  assert.equal(await bots.save(other,'secret-one','token-one',{userId:'U'+'1'.repeat(32),displayName:'one'}),false);
+  assert.equal(await bots.save(other,'secret-one','token-one',{userId:'U'+'1'.repeat(32),displayName:'one'}),null);
   assert.equal((await bots.list(other)).length,0);
  } finally {await db.close();}
 });
