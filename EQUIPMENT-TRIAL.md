@@ -13,3 +13,9 @@ node equipment-web.mjs
 ## 核准事件
 
 `equipment-web.mjs` 的 `createEquipmentServer({ publicOrigin, onApproved })` 接受伺服器端事件處理函式。借用單第一次由待核准變成已核准時，會收到 `loan.approved` 事件，內容包括 `id`、`number`、`equipment`、`unit`、`purpose` 與 `approvedAt`。同一筆借用單重複核准時沿用同一個狀態與事件識別。
+
+## 借用申請通知
+
+部署需掛載僅供此應用使用、可由 node 使用者寫入的持久化 Docker 卷至 `/data`，且僅使用單一執行個體。借用單及通知事件一起保存，四小時工作區期限維持不變。事件使用固定的識別碼和訊息，重試沿用原值。金鑰可透過後端環境變數 `EQUIPMENT_LINEBOT_API_KEY` 提供，或在來源容器使用 `equipment-pair.mjs` 領取後儲存在資料目錄；環境變數優先。金鑰不可放入版本庫。切換金鑰後，舊連接的未完成事件不會發送給新連接的收件者。
+
+這是公開試用網站，訪客送出有效的示範申請就可能觸發通知。這個網站不具備正式借用平台所需的身分、權限、備份及完整審核管理，不應輸入真實個資。通知接線站受理不代表 LINE 收件者已收到。

@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEquipmentWorkspace } from './equipment-workspace.mjs';
+import { createSource } from './source-notifications.mjs';
 import { json, privateHeaders, readJson } from './pilot/http.mjs';
 
 const lifetime = 4 * 60 * 60 * 1000;
@@ -18,7 +19,7 @@ const browserHeaders = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 };
 
-export function createEquipmentServer({ publicOrigin, onApproved }) {
+export function createEquipmentServer({ publicOrigin, onApproved, source }) {
   const base = new URL(publicOrigin);
   const { origin } = base;
   if (base.href !== origin + '/' || !['https:', 'http:'].includes(base.protocol) ||
@@ -37,11 +38,21 @@ export function createEquipmentServer({ publicOrigin, onApproved }) {
     const sessionId = /(?:^|;\s*)equipment_trial=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
     const entry = entries.get(sessionId);
     if (entry) return entry.workspace;
+    const saved = sessionId && source?.getSession(sessionId);
+    if (saved && saved.expires > now) {
+      const workspace = createEquipmentWorkspace({ standalone: true, onApproved, initialLoans: saved.loans,
+        persist: (loans, submitted) => source.persist(sessionId, loans, submitted), maxLoans: 30 });
+      entries.set(sessionId, { workspace, expires: saved.expires });
+      return workspace;
+    }
     if (!create || entries.size >= 400) return null;
 
     const id = randomBytes(32).toString('base64url');
-    const workspace = createEquipmentWorkspace({ standalone: true, onApproved, maxLoans: 30 });
-    entries.set(id, { workspace, expires: now + lifetime });
+    const expires = now + lifetime;
+    source?.createSession(id, expires);
+    const workspace = createEquipmentWorkspace({ standalone: true, onApproved,
+      persist: source ? (loans, submitted) => source.persist(id, loans, submitted) : undefined, maxLoans: 30 });
+    entries.set(id, { workspace, expires });
     res.setHeader('Set-Cookie', 'equipment_trial=' + id + '; ' + cookieOptions);
     return workspace;
   }
@@ -81,7 +92,10 @@ export function createEquipmentServer({ publicOrigin, onApproved }) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 39301);
+  const source = process.env.EQUIPMENT_DATA_DIR ? createSource({ directory: process.env.EQUIPMENT_DATA_DIR }) : null;
+  source?.start();
   const server = createEquipmentServer({
+    source,
     publicOrigin: process.env.EQUIPMENT_PUBLIC_ORIGIN || 'http://127.0.0.1:' + port
   });
   server.listen(port, process.env.HOST || '127.0.0.1', () => console.log('Equipment borrowing site ready'));

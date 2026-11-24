@@ -49,9 +49,9 @@ export function createStationClient(origin) {
   return { updateReceipt, enqueueApproval };
 }
 
-export function createEquipmentWorkspace({ station, hubHref, receivedText, onQueued, onApproved, standalone = false, maxLoans = Infinity }) {
-  const requests = new Map();
-  let nextNumber = 0;
+export function createEquipmentWorkspace({ station, hubHref, receivedText, onQueued, onApproved, persist, initialLoans = [], standalone = false, maxLoans = Infinity }) {
+  const requests = new Map(initialLoans.map(request => [request.id, request]));
+  let nextNumber = initialLoans.reduce((max, request) => Math.max(max, Number(request.number.slice(4)) || 0), 0);
 
   async function state(connection) {
     const loans = await Promise.all([...requests.values()].reverse().map(async request => {
@@ -88,6 +88,7 @@ export function createEquipmentWorkspace({ station, hubHref, receivedText, onQue
       number: 'LAB-' + String(++nextNumber).padStart(3, '0'),
       item, unit, purpose, createdAt: new Date().toISOString(), approvedAt: null
     };
+    if (persist) persist([...requests.values(), request], request);
     requests.set(request.id, request);
     return [201, { ...(await state(connection)), created: request.number }];
   }
@@ -102,6 +103,8 @@ export function createEquipmentWorkspace({ station, hubHref, receivedText, onQue
     } else {
       if (request.approvedAt) return [200, await state(connection)];
       request.approvedAt = new Date().toISOString();
+      try { if (persist) persist([...requests.values()]); }
+      catch (error) { request.approvedAt = null; throw error; }
       if (!connection) {
         request.notice = 'unconnected';
         if (onApproved) {
