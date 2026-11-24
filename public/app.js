@@ -5,7 +5,7 @@ const accountLink = document.querySelector('#account-link');
 const guestLink = document.querySelector('#guest-link');
 const logoutButton = document.querySelector('#logout-button');
 const consoleUrl = 'https://developers.line.biz/console/';
-const pages = new Set(['overview', 'account', 'register', 'bot', 'recipients', 'messages', 'integrations']);
+const pages = new Set(['overview', 'account', 'register', 'bot', 'recipients', 'messages', 'integrations', 'platforms']);
 const webhookChecks = new Map();
 const stamp = new Intl.DateTimeFormat('zh-TW', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Taipei'
@@ -188,10 +188,11 @@ async function render({ openOverviewIfApproved = false } = {}) {
     setLayout('active', page, user);
     if (page === 'account') renderProfile(user);
     if (page === 'overview') await renderOverview(signal);
+    if (page === 'platforms') await renderPlatforms(signal);
     if (page === 'bot') await renderBots(params, signal);
     if (page === 'recipients') await renderRecipients(params, signal);
     if (page === 'messages') await renderMessages(params, signal);
-    if (page === 'integrations') await renderIntegrations(signal);
+    if (page === 'integrations') await renderIntegrations(params, signal);
   }
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
@@ -309,8 +310,8 @@ async function renderOverview(signal) {
       <div class="section-heading"><h2>最近發送紀錄</h2>${buttonLink('查看紀錄', '#messages', 'quiet')}</div>
       <div id="overview-history"><p class="muted" role="status">正在載入紀錄…</p></div>
     </section>`;
-  const [botsResponse, recipientsResponse, historyResponse, integrationsResponse] = await Promise.allSettled([
-    api('bots', { signal }), api('recipients', { signal }), api('notifications', { signal }), api('integrations', { signal })
+  const [botsResponse, recipientsResponse, historyResponse, integrationsResponse, platformsResponse] = await Promise.allSettled([
+    api('bots', { signal }), api('recipients', { signal }), api('notifications', { signal }), api('integrations', { signal }), api('platforms', { signal })
   ]);
   if (signal.aborted) return;
 
@@ -338,7 +339,7 @@ async function renderOverview(signal) {
   }
 
   const map = view.querySelector('#overview-map');
-  if (integrationsResponse.status === 'fulfilled' && recipientsResponse.status === 'fulfilled') renderRouteMap(map, integrationsResponse.value.integrations, recipientsResponse.value.recipients, signal);
+  if (integrationsResponse.status === 'fulfilled' && recipientsResponse.status === 'fulfilled' && platformsResponse.status === 'fulfilled') renderRouteMap(map, integrationsResponse.value.integrations, recipientsResponse.value.recipients, platformsResponse.value.platforms, signal);
   else map.innerHTML = '<p class="muted">暫時無法載入通知路線，請重新整理頁面。</p>';
 
   const history = view.querySelector('#overview-history');
@@ -347,10 +348,10 @@ async function renderOverview(signal) {
 }
 
 
-function renderRouteMap(target, integrations, recipients, signal) {
+function renderRouteMap(target, integrations, recipients, platforms, signal) {
   integrations = integrations.map(item => {
     const recipient = recipients.find(person => person.id === item.recipientId);
-    return { ...item, botId: recipient?.botId || `unavailable:${item.id}`,
+    return { ...item, botId: item.botId || recipient?.botId || `unavailable:${item.id}`,
       recipients: [{ id: item.recipientId, label: item.recipientLabel, active: Boolean(recipient) }] };
   });
   if (!integrations.length) {
@@ -359,7 +360,7 @@ function renderRouteMap(target, integrations, recipients, signal) {
   }
   const groups = new Map();
   for (const item of integrations) {
-    if (!groups.has(item.botId)) groups.set(item.botId, { name: item.botName, items: [] });
+    if (!groups.has(item.botId)) groups.set(item.botId, { name: item.botName, platform: platforms.find(platform => platform.botId === item.botId), items: [] });
     groups.get(item.botId).items.push(item);
   }
   target.innerHTML = [...groups.values()].map((group, groupIndex) => {
@@ -368,14 +369,14 @@ function renderRouteMap(target, integrations, recipients, signal) {
     return `<section class="route-group" aria-label="${escapeHtml(group.name)} 的通知路線">
       <div class="route-scroll"><div class="route-canvas" data-group="${groupIndex}">
         <svg class="route-lines" aria-hidden="true"></svg>
-        <div class="route-column"><h3>外部平台</h3>${group.items.map((item, i) => `<div class="route-node route-source" data-source="${i}"><small>外部平台觸發</small><strong>${escapeHtml(item.name)}</strong></div>`).join('')}</div>
+        <div class="route-column"><h3>外部平台</h3>${[`<div class="route-node route-source" data-source="0"><small>事件觸發</small><strong>${escapeHtml(group.platform?.name || "平台名稱待補")}</strong></div>`].join('')}</div>
         <div class="route-column route-station"><h3>LINEBOT 接線站</h3><p class="route-bot">Bot：${escapeHtml(group.name)}</p>${group.items.map((item, i) => {
           const status = !item.keyTail ? '金鑰已撤銷' : !item.enabled ? '已停用' : item.targetReady ? '啟用中' : '收件者或 Bot 無法使用';
-          return `<button type="button" class="route-node route-integration" data-route="${i}" aria-pressed="false"><small>串接${i + 1} · ${status}</small><strong>${escapeHtml(item.name)}</strong><small>${item.keyTail ? '金鑰尾碼 ' + escapeHtml(item.keyTail) : '無有效金鑰'}</small></button>`;
+          return `<button type="button" class="route-node route-integration" data-route="${i}" aria-pressed="false"><small>串接${i + 1} · ${status}</small><strong>${escapeHtml(item.eventName || "事件名稱待設定")}</strong>${!item.eventName ? `<small>原名稱：${escapeHtml(item.name)}</small>` : ""}<small>${item.keyTail ? '金鑰尾碼 ' + escapeHtml(item.keyTail) : '無有效金鑰'}</small></button>`;
         }).join('')}</div>
         <div class="route-column"><h3>收件者</h3>${[...people.values()].map((person, i) => `<div class="route-node route-person" data-person="${i}"><small>收件對象${person.active ? '' : ' · 收件者或 Bot 無法使用'}</small><strong>${escapeHtml(person.label)}</strong></div>`).join('')}</div>
       </div></div>
-      <p class="muted small route-description" aria-live="polite">顯示所有設定的路線；外部系統的實際事件名稱由外部系統決定。</p>
+      <p class="muted small route-description" aria-live="polite">顯示所有設定的路線；原串接名稱需由開發者確認是否為事件名稱。</p>
     </section>`;
   }).join('');
   [...target.querySelectorAll('.route-canvas')].forEach((canvas, groupIndex) => {
@@ -402,7 +403,7 @@ function renderRouteMap(target, integrations, recipients, signal) {
       };
       group.items.forEach((item, i) => {
         const button = buttons[i];
-        line(canvas.querySelector(`[data-source="${i}"]`), button, selected === i);
+        line(canvas.querySelector('[data-source="0"]'), button, selected === i);
         for (const person of item.recipients) {
           const index = people.findIndex(p => p.id === person.id);
           line(button, canvas.querySelector(`[data-person="${index}"]`), selected === i);
@@ -412,8 +413,8 @@ function renderRouteMap(target, integrations, recipients, signal) {
     buttons.forEach((button, i) => button.addEventListener('click', () => {
       selected = selected === i ? -1 : i;
       buttons.forEach((b, index) => b.setAttribute('aria-pressed', String(index === selected)));
-      description.textContent = selected < 0 ? '顯示所有設定的路線；外部系統的實際事件名稱由外部系統決定。' :
-        `${group.items[i].name} → ${group.items[i].recipients.map(person => person.label + (person.active ? '' : '（收件者或 Bot 無法使用）')).join('、')}`;
+      description.textContent = selected < 0 ? '顯示所有設定的路線；原串接名稱需由開發者確認是否為事件名稱。' :
+        `${group.items[i].eventName || "事件名稱待設定"} → ${group.items[i].recipients.map(person => person.label + (person.active ? '' : '（收件者或 Bot 無法使用）')).join('、')}`;
       draw();
     }));
     const observer = new ResizeObserver(draw);
@@ -421,6 +422,35 @@ function renderRouteMap(target, integrations, recipients, signal) {
     signal.addEventListener('abort', () => observer.disconnect(), { once: true });
     draw();
   });
+}
+
+
+async function renderPlatforms(signal) {
+  view.innerHTML = pageHeading('我的數位平台', '每個數位平台對應一個 LINE Bot，可設定多個事件串接。') +
+    `<section class="panel"><h2>新增數位平台</h2><p class="muted">帳號核准後可自行新增，建立平台後再設定並連結 Bot。</p>
+      <form id="platform-create" class="form-stack"><label>數位平台名稱<input name="name" maxlength="80" required placeholder="例如 課程報名平台"></label><button class="button button-primary" type="submit">新增平台</button><p class="feedback" role="status"></p></form></section>
+    <section class="panel section-gap"><h2>我的平台服務</h2><div id="platform-list"><p class="muted">正在載入…</p></div></section>`;
+  const list=view.querySelector('#platform-list');
+  async function load() {
+    const [{platforms},{bots}]=await Promise.all([api('platforms',{signal}),api('bots',{signal})]);
+    if(signal.aborted)return;
+    const used=new Set(platforms.map(p=>p.botId).filter(Boolean));
+    const available=bots.filter(b=>!used.has(b.id));
+    if(!platforms.length){list.innerHTML=emptyState('尚未建立平台','新增平台後即可設定 LINE Bot。');return;}
+    list.innerHTML=platforms.map(platform=>`<article class="integration-item" data-platform-id="${escapeHtml(platform.id)}">
+      <h3>${escapeHtml(platform.name || '平台名稱待補')}</h3><p class="muted small">${platform.botId ? `LINE Bot：${escapeHtml(platform.botName)}${platform.botEnabled?'':'（已停用）'}` : '尚未連結 Bot'}</p>
+      <form class="form-stack" data-platform-action="rename"><label>平台名稱<input name="name" required maxlength="80" value="${escapeHtml(platform.name || '')}" placeholder="請填寫平台名稱"></label><button class="button button-secondary" type="submit">儲存平台名稱</button></form>
+      ${!platform.botId ? `<form class="form-stack" data-platform-action="attach"><label>連結 LINE Bot<select name="botId" required><option value="">請選擇尚未連結的平台 Bot</option>${available.map(bot=>`<option value="${escapeHtml(bot.id)}">${escapeHtml(bot.name)}</option>`).join('')}</select></label><button class="button button-secondary" type="submit"${available.length?'':' disabled'}>連結 Bot</button>${buttonLink('設定新的 Bot','#bot?setup=1','quiet')}</form>` : buttonLink('管理事件串接','#integrations?bot='+encodeURIComponent(platform.botId),'quiet')}
+      <p class="feedback" data-platform-status role="status"></p></article>`).join('');
+  }
+  const form=view.querySelector('#platform-create');
+  form.addEventListener('submit',async event=>{event.preventDefault();const button=form.querySelector('button'),feedback=form.querySelector('.feedback');button.disabled=true;
+    try{await api('platforms',{data:{name:new FormData(form).get('name')},signal});if(!signal.aborted){form.reset();report(feedback,'平台已新增。','success');await load();}}
+    catch(error){if(!signal.aborted)report(feedback,error.message,'danger');}finally{button.disabled=false;}});
+  list.addEventListener('submit',async event=>{event.preventDefault();const form=event.target,card=form.closest('[data-platform-id]'),button=form.querySelector('button'),feedback=card.querySelector('[data-platform-status]');button.disabled=true;
+    try{const data={id:card.dataset.platformId,...Object.fromEntries(new FormData(form))};await api('platforms/'+form.dataset.platformAction,{data,signal});if(!signal.aborted)await load();}
+    catch(error){if(!signal.aborted)report(feedback,error.message,'danger');}finally{button.disabled=false;}});
+  try{await load();}catch(error){if(!signal.aborted)showPageError(list,error.message);}
 }
 
 function confirmAction(title, description, label, signal) {
@@ -823,7 +853,7 @@ async function renderRecipients(params, signal) {
   });
 }
 
-async function renderIntegrations(signal) {
+async function renderIntegrations(params, signal) {
   view.innerHTML = pageHeading('外部串接', '讓報名、簽核等數位平台在事件發生時，自動用你的 LINE Bot 發送通知。',
     buttonLink('查看發送紀錄', '#messages', 'secondary')) +
     '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
@@ -837,13 +867,16 @@ async function renderIntegrations(signal) {
   }
   if (signal.aborted) return;
 
+  const selectedBot = params.get('bot');
+  if (selectedBot) recipients = recipients.filter(recipient => recipient.botId === selectedBot);
+  const filterItems = items => selectedBot ? items.filter(item => item.botId === selectedBot) : items;
   const path = 'integrations';
-  const recipientOptions = selected => option('', '請選擇 Bot 與收件對象') + recipients.map(recipient =>
+  const recipientOptions = (selected, botId) => option('', '請選擇 Bot 與收件對象') + recipients.filter(recipient => !botId || recipient.botId === botId).map(recipient =>
     `<option value="${escapeHtml(recipient.id)}"${recipient.id === selected ? ' selected' : ''}>${escapeHtml(recipient.botName)} ／ ${escapeHtml(recipient.label)}</option>`
   ).join('');
-  const fields = (name, recipientId) => `
-    <label>數位平台名稱<input name="name" required maxlength="80" value="${escapeHtml(name)}" placeholder="例如 課程報名平台"></label>
-    <label>LINE Bot 與收件對象<select name="recipientId" required>${recipientOptions(recipientId)}</select></label>`;
+  const fields = (name, recipientId, botId) => `
+    <label>觸發事件名稱<input name="name" required maxlength="80" value="${escapeHtml(name)}" placeholder="例如 新增課程報名"></label>
+    <label>LINE Bot 與收件對象<select name="recipientId" required>${recipientOptions(recipientId, botId)}</select></label>`;
   const firstRecipient = recipients.length === 1 ? recipients[0].id : '';
   const example = [
     '$headers = @{',
@@ -858,7 +891,7 @@ async function renderIntegrations(signal) {
     <div class="split-layout integration-layout">
       <section class="panel" aria-labelledby="integration-create-title">
         <h2 id="integration-create-title">新增外部串接</h2>
-        <p class="muted">選擇這個數位平台發送時要用的 Bot 和收件對象。</p>
+        <p class="muted">填寫觸發事件名稱，並選擇對應的 Bot 和收件對象。</p>
         ${recipients.length ? `<form id="integration-create" class="form-stack">
           ${fields('', firstRecipient)}
           <button type="submit" class="button button-primary">建立並取得金鑰</button>
@@ -891,7 +924,7 @@ async function renderIntegrations(signal) {
   const feedback = workspace.querySelector('#integration-feedback');
   const secret = workspace.querySelector('#integration-secret');
   const testKeys = new Map();
-  let items = initial.integrations;
+  let items = filterItems(initial.integrations);
   let busy = false;
 
   function renderList() {
@@ -905,7 +938,7 @@ async function renderIntegrations(signal) {
       const action = (type, label, disabled = false) =>
         `<button type="button" class="button button-quiet" data-integration-action="${type}"${disabled ? ' disabled' : ''}>${label}</button>`;
       return `<article class="integration-item" data-integration-id="${escapeHtml(item.id)}">
-        <div class="section-heading"><h3>${escapeHtml(item.name)}</h3>${chip(...status)}</div>
+        <div class="section-heading"><h3>${escapeHtml(item.eventName || "事件名稱待設定")}</h3>${chip(...status)}</div>${!item.eventName ? `<p class="muted small">原名稱：${escapeHtml(item.name)}。請修改為觸發事件名稱。</p>` : ""}
         <p class="muted small">${escapeHtml(item.botName)} → ${escapeHtml(item.recipientLabel)}</p>
         ${item.keyTail ? `<p class="muted small">金鑰尾碼 <code>${escapeHtml(item.keyTail)}</code></p>` : ''}
         <div class="button-row">
@@ -914,8 +947,8 @@ async function renderIntegrations(signal) {
           ${action('rotate', item.keyTail ? '換發金鑰' : '產生新金鑰')}
           ${item.keyTail ? action('revoke', '撤銷金鑰') : ''}
         </div>
-        ${recipients.length ? `<details class="integration-edit"><summary>修改名稱或收件人</summary>
-          <form class="form-stack">${fields(item.name, item.recipientId)}
+        ${recipients.length ? `<details class="integration-edit"><summary>修改事件名稱或收件人</summary>
+          <form class="form-stack">${fields(item.name, item.recipientId, item.botId)}
             <button class="button button-secondary" type="submit">儲存串接設定</button>
           </form></details>` : ''}
       </article>`;
@@ -942,7 +975,7 @@ async function renderIntegrations(signal) {
   async function refreshList() {
     const updated = await api(path, { signal });
     if (!signal.aborted) {
-      items = updated.integrations;
+      items = filterItems(updated.integrations);
       renderList();
     }
   }

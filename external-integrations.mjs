@@ -23,7 +23,7 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
 
   async function list(accountId) {
     const { rows } = await db.query(`select i.id, i.name, i.enabled, i.key_tail as "keyTail",
-      i.recipient_id as "recipientId", b.bot_name as "botName", r.label as "recipientLabel",
+      i.recipient_id as "recipientId", b.id as "botId", b.bot_name as "botName", i.event_name as "eventName", r.label as "recipientLabel",
       (r.active and b.enabled) as "targetReady", i.created_at as "createdAt"
       from linebot_private.integrations i
       join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
@@ -37,8 +37,8 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     if (!name || name.length > 80 || !externalIdPattern.test(input?.recipientId || '')) return { error: 'invalid' };
 
     const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
-    const { rows } = await db.query(`insert into linebot_private.integrations(account_id,recipient_id,name,key_hash,key_tail)
-      select r.account_id,r.id,$3,$4,$5 ${eligibleRecipients} returning id`,
+    const { rows } = await db.query(`insert into linebot_private.integrations(account_id,recipient_id,name,key_hash,key_tail,event_name)
+      select r.account_id,r.id,$3,$4,$5,$3 ${eligibleRecipients} returning id`,
     [accountId, input.recipientId, name, digest(apiKey), apiKey.slice(-6)]);
     return rows.length ? { id: rows[0].id, apiKey } : { error: 'target_unavailable' };
   }
@@ -47,9 +47,9 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
     if (!name || name.length > 80 || !externalIdPattern.test(input?.recipientId || '')) return { error: 'invalid' };
 
-    const result = await db.query(`update linebot_private.integrations i set name=$3,recipient_id=$2,
+    const result = await db.query(`update linebot_private.integrations i set name=$3,event_name=$3,recipient_id=$2,
       revision=i.revision + case when i.recipient_id<>$2 then 1 else 0 end
-      where i.account_id=$1 and i.id=$4 and exists (select 1 ${eligibleRecipients}) returning i.id`,
+      where i.account_id=$1 and i.id=$4 and exists (select 1 ${eligibleRecipients} and r.bot_id=(select prior.bot_id from linebot_private.recipients prior where prior.id=i.recipient_id and prior.account_id=i.account_id)) returning i.id`,
     [accountId, input.recipientId, name, id]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }

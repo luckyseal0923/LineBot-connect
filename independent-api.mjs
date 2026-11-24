@@ -2,7 +2,7 @@
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -37,6 +37,19 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       if(path==='/independent-api/me' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         send(res,200,{username:user.username,displayName:user.display_name,status:user.status});return true;
+      }
+      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path==='/independent-api/platforms/attach') {
+        const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}
+        if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
+        if(!platforms){send(res,503,{error:'數位平台功能尚未開放。'});return true;}
+        if(req.method==='GET' && path==='/independent-api/platforms'){send(res,200,{platforms:await platforms.list(user.id)});return true;}
+        if(req.method!=='POST'){send(res,405,{error:'請使用指定的方法。'});return true;}
+        if(!await allow('platform-manage') || !await allow(`platform-manage:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
+        const data=await read(req);
+        const result=path.endsWith('/rename')?await platforms.rename(user.id,data.id,data.name):path.endsWith('/attach')?await platforms.attach(user.id,data.id,data.botId):await platforms.create(user.id,data.name);
+        if(result.error){const messages={invalid:'請確認平台名稱及 Bot。',unavailable:'找不到可操作的平台或 Bot，或此平台已有 Bot。',bot_in_use:'此 Bot 已屬於其他平台。'};send(res,result.error==='invalid'?400:409,{error:messages[result.error]});}
+        else send(res,200,result);
+        return true;
       }
       if(path==='/independent-api/bots' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}

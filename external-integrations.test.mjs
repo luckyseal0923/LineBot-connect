@@ -8,6 +8,7 @@ import { createExternalIntegrations, hasExternalIntegrationSchema } from './exte
 import { createCredentialVault } from './line-webhook.mjs';
 import { createNotifications } from './notifications.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
+import { createPlatformServices } from './platform-services.mjs';
 
 test('isolated HTTP integration flow enforces ownership, persists and deduplicates delivery, and revokes keys', async () => {
   const db = new PGlite();
@@ -23,6 +24,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     }
     assert.equal(await hasExternalIntegrationSchema(db), false);
     await db.exec(await readFile(new URL('./db/015_external_integrations.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('./db/017_platform_services.sql', import.meta.url), 'utf8'));
     assert.equal(await hasExternalIntegrationSchema(db), true);
     assert.equal((await db.query('select value from other_platform.records')).rows[0].value, 'unchanged');
 
@@ -76,7 +78,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const origin = 'http://127.0.0.1:39186';
     server = createLinebotServer({
       accounts: { me: token => users.get(token) }, bots: { findByWebhook: async () => null },
-      vault, eventStore: async () => {}, allow, lookupBot: async () => null, publicOrigin: origin, notifications, integrations
+      vault, eventStore: async () => {}, allow, lookupBot: async () => null, publicOrigin: origin, notifications, integrations, platforms:createPlatformServices({db})
     });
     await new Promise((resolve, reject) => server.listen(39186, '127.0.0.1', resolve).once('error', reject));
     const adminPath = '/independent-api/integrations';
@@ -95,6 +97,13 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
       headers: { Authorization: 'Bearer ' + apiKey }
     });
 
+    assert.equal((await portal('x','/independent-api/platforms')).status, 401);
+    assert.equal((await portal('p','/independent-api/platforms',{name:'test'})).status, 403);
+    const service = await (await portal('a','/independent-api/platforms',{name:'課程平台'})).json();
+    assert.ok(service.id);
+    assert.equal((await portal('b','/independent-api/platforms/rename',{id:service.id,name:'跨帳號'})).status, 409);
+    assert.equal((await portal('a','/independent-api/platforms/attach',{id:service.id,botId:alice.botId})).status, 200);
+    assert.equal((await (await portal('a','/independent-api/platforms')).json()).platforms[0].name,'課程平台');
     assert.equal((await portal('x')).status, 401);
     assert.equal((await portal('p')).status, 403);
     assert.equal((await portal('a', adminPath, {}, 'https://other.invalid')).status, 403);
