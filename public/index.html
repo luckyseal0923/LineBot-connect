@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#103d30">
+  <meta name="theme-color" content="#17382d">
   <title>LineBOT 接線站</title>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
@@ -12,14 +12,13 @@
   <a class="skip-link" href="#view" id="skip-link">跳到主要內容</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="#overview">
+      <a class="brand" id="brand-home" href="#account">
         <span class="brand-mark" aria-hidden="true">L</span>
         <strong>LineBOT 接線站</strong>
       </a>
       <div class="header-actions">
         <a id="guest-link" class="button button-secondary" href="#register" hidden>申請帳號</a>
-        <button id="nav-toggle" class="button button-secondary mobile-toggle" type="button" aria-controls="workspace-nav" aria-expanded="false" hidden>選單</button>
-        <a id="account-link" class="button button-quiet header-user" href="#account" hidden>帳號</a>
+        <a id="account-link" class="button button-secondary header-user" href="#account" hidden>帳號</a>
         <button id="logout-button" class="button button-quiet" type="button" hidden>登出</button>
       </div>
     </div>
@@ -27,17 +26,26 @@
   <div class="workspace-shell">
     <aside class="sidebar" id="workspace-nav" hidden>
       <nav aria-label="工作空間">
-        <a href="#overview" data-page="overview">總覽</a>
         <a href="#platforms" data-page="platforms">我的數位平台</a>
-        <a href="#bot" data-page="bot">我的 LINE Bot</a>
-        <a href="#recipients" data-page="recipients">收件對象</a>
-        <a href="#integrations" data-page="integrations">外部串接</a>
-        <a href="#messages" data-page="messages">發送與紀錄</a>
+        <div class="nav-group" id="platform-nav" hidden>
+          <p class="nav-caption">目前平台</p>
+          <a href="#overview" data-page="overview">平台總覽</a>
+          <a href="#bot" data-page="bot">LINE Bot 設定</a>
+          <a href="#recipients" data-page="recipients">收件對象</a>
+          <a href="#integrations" data-page="integrations">事件串接</a>
+          <a href="#messages" data-page="messages">發送與紀錄</a>
+        </div>
       </nav>
     </aside>
-    <main id="view" tabindex="-1">
-      <p class="page-loading" role="status">正在確認登入狀態…</p>
-    </main>
+    <div class="workspace-content">
+      <div class="platform-context" id="platform-context" hidden>
+        <div><span>目前平台</span><strong id="platform-context-name"></strong><span id="platform-context-bot" hidden></span></div>
+        <a class="button button-quiet" href="#platforms">切換平台</a>
+      </div>
+      <main id="view" tabindex="-1">
+        <p class="page-loading" role="status">正在確認登入狀態…</p>
+      </main>
+    </div>
   </div>
   <footer class="site-footer">LineBOT Connect</footer>
 </body>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#103d30">
+  <meta name="theme-color" content="#172e37">
   <title>接線站管理後台</title>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/admin.js"></script>
@@ -17,7 +17,6 @@
         <strong>接線站管理後台</strong>
       </a>
       <div class="header-actions">
-        <button class="button button-secondary mobile-toggle" id="admin-toggle" type="button" aria-controls="admin-nav" aria-expanded="false" hidden>選單</button>
         <a class="button button-quiet return-front" href="https://linebot-next.wfhai.org/">返回接線站</a>
         <button class="button button-quiet" id="admin-logout" type="button" hidden>登出</button>
       </div>
@@ -26,12 +25,18 @@
   <div class="workspace-shell">
     <aside class="sidebar" id="admin-nav" hidden>
       <nav aria-label="管理後台">
-        <a href="#overview" data-page="overview">總覽</a>
-        <a href="#pending" data-page="pending">待審申請</a>
-        <a href="#users" data-page="users">使用者</a>
-        <a href="#usage" data-page="usage">LINE 用量</a>
-        <a href="#records" data-page="records">發送紀錄</a>
-        <a href="#audit" data-page="audit">操作紀錄</a>
+        <div class="nav-group">
+          <p class="nav-caption">帳號管理</p>
+          <a href="#overview" data-page="overview">管理總覽</a>
+          <a href="#pending" data-page="pending">待審申請</a>
+          <a href="#users" data-page="users">使用者</a>
+        </div>
+        <div class="nav-group">
+          <p class="nav-caption">營運紀錄</p>
+          <a href="#usage" data-page="usage">LINE 用量</a>
+          <a href="#records" data-page="records">發送紀錄</a>
+          <a href="#audit" data-page="audit">操作紀錄</a>
+        </div>
       </nav>
     </aside>
     <main id="admin-view" tabindex="-1">

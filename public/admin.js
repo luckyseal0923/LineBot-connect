@@ -1,6 +1,5 @@
 const view = document.querySelector('#admin-view');
 const nav = document.querySelector('#admin-nav');
-const menu = document.querySelector('#admin-toggle');
 const logout = document.querySelector('#admin-logout');
 const sections = new Set(['overview', 'pending', 'users', 'usage', 'records', 'audit']);
 const stamp = new Intl.DateTimeFormat('zh-TW', {
@@ -92,10 +91,7 @@ function report(target, message, tone = '') {
 function setLayout(authenticated, section) {
   document.documentElement.dataset.auth = authenticated ? 'active' : 'guest';
   nav.hidden = !authenticated;
-  menu.hidden = !authenticated;
   logout.hidden = !authenticated;
-  nav.classList.remove('is-open');
-  menu.setAttribute('aria-expanded', 'false');
   for (const item of nav.querySelectorAll('a')) {
     if (item.dataset.page === section) item.setAttribute('aria-current', 'page');
     else item.removeAttribute('aria-current');
@@ -150,7 +146,7 @@ async function render() {
 function renderLogin() {
   view.innerHTML = `<section class="panel entry-card admin-entry">
     <h1 tabindex="-1">管理員登入</h1>
-    <p class="muted">審核帳號並查閱平台使用情形。</p>
+    <p class="muted">審核開發者帳號，查閱接線站用量和紀錄。</p>
     <form id="login-form" class="form-stack">
       <label>管理員帳號<input name="username" autocomplete="username" autocapitalize="none" required></label>
       <label>密碼<input name="password" type="password" autocomplete="current-password" required></label>
@@ -179,12 +175,11 @@ function renderLogin() {
 }
 
 function table(label, columns, rows, emptyMessage = '目前沒有符合的資料。') {
-  if (!rows.length) return `<p class="table-empty">${escapeHtml(emptyMessage)}</p>`;
-  return `<div class="table-wrap"><table class="data-table" role="table">
+  if (!rows.length) return `<div class="empty-state table-empty"><p>${escapeHtml(emptyMessage)}</p></div>`;
+  return `<div class="table-wrap"><table class="data-table">
     <caption class="sr-only">${escapeHtml(label)}</caption>
     <thead><tr>${columns.map(column => `<th scope="col">${escapeHtml(column)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(cells => `<tr role="row">${cells.map((cell, index) =>
-      `<td role="cell" data-label="${escapeHtml(columns[index])}">${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+    <tbody>${rows.map(cells => `<tr>${cells.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody>
   </table></div>`;
 }
 
@@ -273,11 +268,15 @@ function pendingTable(accounts) {
 }
 
 async function renderOverview(pending, signal) {
-  view.innerHTML = heading('管理總覽', '查看待審申請、Bot 使用情形與發送狀態。') +
-    `<section class="metric-grid" id="summary" aria-label="平台統計"><p role="status">正在載入統計…</p></section>
-    <section class="panel section-gap" id="pending-preview">
-      <div class="section-heading"><h2>待審申請</h2>${link('查看全部', '#pending')}</div>
+  view.innerHTML = heading('管理總覽', '處理開發者帳號申請，掌握接線站的通知情形。') +
+    `<section class="panel" id="pending-preview" aria-labelledby="admin-pending-title">
+      <div class="section-heading"><div><h2 id="admin-pending-title">待審申請</h2>
+        <p class="muted small">顯示最近的待審帳號</p></div>${link('查看待審清單', '#pending', pending.length ? 'primary' : 'secondary')}</div>
       ${pendingTable(pending.slice(0, 4))}
+    </section>
+    <section class="section-gap" aria-labelledby="admin-summary-title">
+      <div class="section-heading"><h2 id="admin-summary-title">接線站使用情形</h2></div>
+      <div class="metric-grid" id="summary"><p role="status">正在載入統計…</p></div>
     </section>`;
   bindReviewButtons(view.querySelector('#pending-preview'), pending.slice(0, 4), signal);
   const from = new Date(Date.now() - 30 * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' });
@@ -292,18 +291,19 @@ async function renderOverview(pending, signal) {
   }
   if (signal.aborted) return;
   const cards = [
-    ['使用者', 'accounts', '#users'],
     ['待審申請', 'pending', '#pending'],
+    ['使用者', 'accounts', '#users'],
     ['啟用中 Bot', 'active_bots', '#usage'],
     ['近 30 天發送紀錄', 'notifications_30d', href('records', { from })],
     ['近 30 天失敗或未確認', 'attention_30d', href('records', { status: 'attention', from })]
   ];
   view.querySelector('#summary').innerHTML = cards.map(([label, key, url]) =>
-    `<a class="metric-card" href="${escapeHtml(url)}"><span>${label}</span><strong>${count(summary[key])}</strong></a>`).join('');
+    `<a class="metric-card" href="${escapeHtml(url)}" data-attention="${['pending', 'attention_30d'].includes(key) && summary[key] > 0}">
+      <span>${label}</span><strong>${count(summary[key])}</strong></a>`).join('');
 }
 
 function renderPending(accounts, signal) {
-  view.innerHTML = heading('待審申請', '核准後，申請人可登入工作空間並設定自己的 LINE Bot。') +
+  view.innerHTML = heading('待審申請', '帳號核准後，開發者可自行新增數位平台。') +
     `<section class="panel">${pendingTable(accounts)}</section>`;
   bindReviewButtons(view, accounts, signal);
 }
@@ -373,11 +373,11 @@ function botsTable(bots, includeOwner) {
     return duplicate;
   });
   const explanation = duplicateName
-    ? '<p class="muted small">同一帳號下若有同名 Bot，依名稱查詢時會一起顯示其各筆發送紀錄。</p>'
+    ? '<p class="muted small">同一帳號有同名 Bot 時，依名稱查詢會顯示這些 Bot 的發送紀錄。</p>'
     : '';
   const columns = [
-    ...(includeOwner ? ['使用者'] : []), 'Bot 名稱', '狀態', '最後更新', '近 30 天平台發送',
-    'LINE 官方當月用量（約略）', '用量查詢時間', '發送紀錄'
+    ...(includeOwner ? ['使用者'] : []), 'Bot 名稱', '狀態', '最後更新', '近 30 天發送',
+    'LINE 當月用量', '查詢時間', '發送紀錄'
   ];
   return explanation + table('LINE Bot 與用量', columns, bots.map(bot => [
     ...(includeOwner ? [userLink(bot)] : []), `<strong>${escapeHtml(bot.bot_name)}</strong>`,
@@ -506,16 +506,6 @@ async function renderAudit(signal) {
       ]))}</section>`;
 }
 
-menu.addEventListener('click', () => {
-  const open = nav.classList.toggle('is-open');
-  menu.setAttribute('aria-expanded', String(open));
-});
-nav.addEventListener('click', event => {
-  if (event.target.closest('a')) {
-    nav.classList.remove('is-open');
-    menu.setAttribute('aria-expanded', 'false');
-  }
-});
 document.querySelector('#admin-skip').addEventListener('click', event => {
   event.preventDefault();
   view.focus();
