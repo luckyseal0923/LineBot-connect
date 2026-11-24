@@ -13,9 +13,13 @@ export function createBotStore({ db, vault, tokenVault }) {
         [accountId,bot.userId,bot.displayName,JSON.stringify(encrypted),JSON.stringify(encryptedToken)]);
       return result.rows[0] || null;
     },
-    async list(accountId) {
-      const result=await db.query(`select id,bot_name as "botName",webhook_key as "webhookKey",enabled from linebot_private.bot_credentials where account_id=$1 order by bot_name,id`,[accountId]);
+    async list(accountId, botId = null) {
+      const result=await db.query(`select id,bot_name as "botName",webhook_key as "webhookKey",enabled from linebot_private.bot_credentials where account_id=$1 and ($2::uuid is null or id=$2::uuid) order by bot_name,id`,[accountId,botId]);
       return result.rows;
+    },
+    async findByIdentity(accountId, botUserId) {
+      const {rows}=await db.query('select id from linebot_private.bot_credentials where account_id=$1 and bot_user_id=$2',[accountId,botUserId]);
+      return rows[0] || null;
     },
     async disable(accountId, botId) {
       const result=await db.query('update linebot_private.bot_credentials set enabled=false,updated_at=now() where account_id=$1 and id=$2 returning id', [accountId,botId]);

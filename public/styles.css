@@ -593,3 +593,5 @@ input[readonly] { background: #f6faf7; }
 .route-person { border-top: 3px solid #d49a44; }
 .route-description { margin: .5rem 0 0; overflow-wrap: anywhere; }
 
+
+.platform-context { display:flex; justify-content:space-between; gap:1rem; align-items:center; margin-bottom:1rem; padding:.75rem 1rem; border-radius:10px; background:#e9f5ed; color:#215a3e; flex-wrap:wrap; }

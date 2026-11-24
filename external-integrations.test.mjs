@@ -58,6 +58,9 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     }
     const alice = users.get('a'.repeat(43));
     const bob = users.get('b'.repeat(43));
+    const secondBot = randomUUID(), secondRecipient = randomUUID();
+    await db.query(`insert into linebot_private.bot_credentials(id,account_id,bot_user_id,bot_name,encrypted_secret,encrypted_access_token,enabled) values($1,$2,$3,'second','{}',$4,true)`,[secondBot,alice.id,'U'+'c'.repeat(32),JSON.stringify(tokenVault.seal(alice.id,'token'))]);
+    await db.query(`insert into linebot_private.recipients(id,account_id,bot_id,line_hash,encrypted_line_id,label) values($1,$2,$3,'second',$4,'second')`,[secondRecipient,alice.id,secondBot,JSON.stringify(recipientVault.seal(alice.id,'U'+'c'.repeat(32)))]);
     users.set('p'.repeat(43), { id: randomUUID(), status: 'pending' });
 
     const sent = [];
@@ -117,6 +120,17 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(listed.integrations.length, 1);
     assert.equal(listed.integrations[0].keyTail, apiKey.slice(-6));
     assert.equal(JSON.stringify(listed).includes(apiKey), false);
+    const otherPlatform=await (await portal('a','/independent-api/platforms',{name:'教具平台'})).json();
+    assert.equal((await portal('a','/independent-api/platforms/attach',{id:otherPlatform.id,botId:secondBot})).status,200);
+    const otherRoute=await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`,{recipientId:secondRecipient,name:'借用'})).json();
+    const routesA=(await (await portal('a',`${adminPath}?platform=${service.id}`)).json()).integrations;
+    const routesB=(await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`)).json()).integrations;
+    assert.deepEqual(routesA.map(x=>x.id),[id]); assert.deepEqual(routesB.map(x=>x.id),[otherRoute.id]);
+    assert.equal((await (await portal('a',`/independent-api/recipients?platform=${service.id}`)).json()).recipients[0].id,alice.recipientId);
+    assert.equal((await portal('a',`${adminPath}?platform=${service.id}`,{recipientId:secondRecipient,name:'不應建立'})).status,403);
+    assert.equal((await portal('a',`${adminPath}/${otherRoute.id}/disable?platform=${service.id}`,{})).status,404);
+    assert.equal((await portal('a',`/independent-api/recipient/disable?platform=${service.id}`,{recipientId:secondRecipient})).status,404);
+    assert.equal((await portal('b',`${adminPath}?platform=${service.id}`)).status,503);
     assert.equal((await portal('b', `${adminPath}/${id}/rotate`, {})).status, 404);
     assert.equal((await post('wrong', 'order-1042', { message: 'test' })).status, 401);
     assert.equal((await post(apiKey, '', { message: 'test' })).status, 400);

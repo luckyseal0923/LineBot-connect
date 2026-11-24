@@ -21,14 +21,14 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     join linebot_private.accounts a on a.id=r.account_id
     where r.id=$2 and r.account_id=$1 and r.active and b.enabled and a.status='active'`;
 
-  async function list(accountId) {
+  async function list(accountId, botId = null) {
     const { rows } = await db.query(`select i.id, i.name, i.enabled, i.key_tail as "keyTail",
       i.recipient_id as "recipientId", b.id as "botId", b.bot_name as "botName", i.event_name as "eventName", r.label as "recipientLabel",
       (r.active and b.enabled) as "targetReady", i.created_at as "createdAt"
       from linebot_private.integrations i
       join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
       join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
-      where i.account_id=$1 order by i.created_at desc, i.id`, [accountId]);
+      where i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId,botId]);
     return rows;
   }
 

@@ -15,7 +15,16 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
   const send = (res,status,body,extra={}) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}); res.end(JSON.stringify(body)); };
   const read = async req => { const parts=[]; let n=0; for await(const chunk of req){n+=chunk.length;if(n>8192) throw Error('too large');parts.push(chunk);}return JSON.parse(Buffer.concat(parts).toString('utf8')); };
   return async function api(req,res) {
-    const path=new URL(req.url,origin).pathname;
+    const requestUrl=new URL(req.url,origin);
+    const path=requestUrl.pathname;
+    const requestedPlatform=requestUrl.searchParams.get('platform');
+    async function platformBot(user) {
+      if (!requestedPlatform) return null;
+      if (!platforms || !botIdPattern.test(requestedPlatform)) throw Error('invalid platform');
+      const platform=(await platforms.list(user.id)).find(item => item.id===requestedPlatform);
+      if (!platform) throw Error('invalid platform');
+      return platform.botId || '00000000-0000-0000-0000-000000000000';
+    }
     if (!path.startsWith('/independent-api/')) return false;
     if (req.method === 'POST' && req.headers.origin !== origin.origin) {send(res,403,{error:'來源不正確'});return true;}
     try {
@@ -53,7 +62,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       }
       if(path==='/independent-api/bots' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
-        const items=await bots.list(user.id);
+        const items=await bots.list(user.id,await platformBot(user));
         send(res,200,{bots:items.map(publicBot)});return true;
       }
       if(path==='/independent-api/bot' && req.method==='POST') {
@@ -63,10 +72,22 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(typeof data.channelSecret!=='string'||!data.channelSecret.trim()||Buffer.byteLength(data.channelSecret)>4096){send(res,400,{error:'請輸入 Channel secret'});return true;}
         if(typeof data.accessToken!=='string'||!data.accessToken||Buffer.byteLength(data.accessToken)>4096){send(res,400,{error:'請輸入 Channel access token'});return true;}
         const bot=await lookupBot(data.accessToken);if(!bot){send(res,400,{error:'無法驗證 LINE Bot 憑證。'});return true;}
+        const scopedBot=await platformBot(user);
+        if(scopedBot) {
+          const existing=await bots.findByIdentity(user.id,bot.userId);
+          const unassigned=scopedBot==='00000000-0000-0000-0000-000000000000';
+          if((!unassigned && existing?.id!==scopedBot) || (unassigned && existing && (await platforms.list(user.id)).some(p=>p.botId===existing.id))) {
+            send(res,409,{error:'此 Bot 已屬於其他平台，請使用此平台的 Bot。'});return true;
+          }
+        }
         let saved;
         try { saved = await bots.save(user.id, data.channelSecret, data.accessToken, bot); }
         catch (error) { if (error?.code !== '23505') throw error; }
         if (!saved) { send(res, 409, { error: '此 LINE Bot 已綁定其他帳號。' }); return true; }
+        if (requestedPlatform && scopedBot==='00000000-0000-0000-0000-000000000000') {
+          const attached=await platforms.attach(user.id,requestedPlatform,saved.id);
+          if(attached.error){send(res,409,{error:'Bot 已儲存，但無法連結平台；請至我的數位平台確認設定。'});return true;}
+        }
         send(res, 200, { message: 'LINE Bot 憑證已儲存，請在 LINE Developers 驗證 Webhook。', bot: publicBot(saved) });
         return true;
       }
@@ -75,6 +96,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (!user) { send(res, 401, { error: '請先登入。' }); return true; }
         if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
         const { botId } = await read(req);
+        const scopedBot=await platformBot(user); if(scopedBot && botId!==scopedBot){send(res,403,{error:'Bot 不屬於此平台。'});return true;}
         if (typeof botId !== 'string' || !botIdPattern.test(botId)) {
           send(res, 400, { error: '請選擇啟用中的 LINE Bot。' }); return true;
         }
@@ -90,6 +112,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       if(path==='/independent-api/bot/disable' && req.method==='POST') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         const data=await read(req);
+        const scopedBot=await platformBot(user); if(scopedBot && data.botId!==scopedBot){send(res,403,{error:'Bot 不屬於此平台。'});return true;}
         if(typeof data.botId!=='string'||!botIdPattern.test(data.botId)){send(res,400,{error:'請選擇要停用的 LINE Bot。'});return true;}
         if(!await bots.disable(user.id,data.botId)){send(res,404,{error:'找不到 LINE Bot。'});return true;}
         send(res,200,{message:'已停用'});return true;
@@ -101,7 +124,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
         if (!integrations) { send(res, 503, { error: '外部串接尚未開放。' }); return true; }
         if (req.method === 'GET' && !integrationAction) {
-          send(res, 200, { integrations: await integrations.list(user.id), endpoint: new URL('/api/v1/send', origin).href });
+          send(res, 200, { integrations: await integrations.list(user.id,await platformBot(user)), endpoint: new URL('/api/v1/send', origin).href });
           return true;
         }
         if (req.method !== 'POST') {
@@ -112,10 +135,16 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           send(res, 429, { error: '操作過於頻繁，請稍候再試。' }); return true;
         }
 
+        const scopedBot=await platformBot(user);
         let result;
         const action = integrationAction?.[2].toLowerCase();
         const id = integrationAction?.[1];
-        if (!action) result = await integrations.create(user.id, await read(req));
+        if (!action) {
+          const input=await read(req);
+          if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===input.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
+          result = await integrations.create(user.id, input);
+        }
+        else if (scopedBot && !(await integrations.list(user.id,scopedBot)).some(item=>item.id===id)) {send(res,404,{error:'找不到此平台的串接。'});return true;}
         else if (action === 'edit') result = await integrations.edit(user.id, id, await read(req));
         else if (action === 'test') result = await integrations.testSend(user.id, id, (await read(req))?.eventKey);
         else result = await integrations.manage(user.id, id, action);
@@ -138,19 +167,25 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(!notifications){send(res,503,{error:'通知功能尚未開放。'});return true;}
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
-        if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id)});return true;}
-        if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id)});return true;}
+        if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user))});return true;}
+        if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id,await platformBot(user))});return true;}
         if(path==='/independent-api/recipient/pair'&&req.method==='POST'){
           if(!await allow('pairing')||!await allow(`pairing:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
-          const data=await read(req),result=await notifications.createPairing(user.id,data.botId,data.label);
+          const data=await read(req), scopedBot=await platformBot(user);
+          if(scopedBot && data.botId!==scopedBot){send(res,403,{error:'Bot 不屬於此平台。'});return true;}
+          const result=await notifications.createPairing(user.id,data.botId,data.label);
           send(res,result?200:400,result||{error:'請選擇自己的啟用中 Bot 並填寫名稱。'});return true;
         }
         if(path==='/independent-api/recipient/disable'&&req.method==='POST'){
-          const data=await read(req),ok=await notifications.disable(user.id,data.recipientId);send(res,ok?200:404,ok?{message:'已移除收件對象。'}:{error:'找不到收件對象。'});return true;
+          const data=await read(req), scopedBot=await platformBot(user);
+          if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===data.recipientId)){send(res,404,{error:'找不到此平台的收件對象。'});return true;}
+          const ok=await notifications.disable(user.id,data.recipientId);send(res,ok?200:404,ok?{message:'已移除收件對象。'}:{error:'找不到收件對象。'});return true;
         }
         if(path==='/independent-api/notification/send'&&req.method==='POST'){
           if(!await allow('notify')||!await allow(`notify:${user.id}`)){send(res,429,{error:'發送過於頻繁，請稍後再試。'});return true;}
-          const result=await notifications.send(user.id,await read(req));send(res,result.error?400:200,result.error?{error:'訊息或收件對象不正確。'}:result);return true;
+          const data=await read(req),scopedBot=await platformBot(user);
+          if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===data.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
+          const result=await notifications.send(user.id,data);send(res,result.error?400:200,result.error?{error:'訊息或收件對象不正確。'}:result);return true;
         }
       }
       send(res,404,{error:'找不到功能'});return true;

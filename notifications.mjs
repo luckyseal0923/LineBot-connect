@@ -33,16 +33,16 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
    select $1,id,$3,$4,now()+interval '10 minutes' from linebot_private.bot_credentials where id=$2 and account_id=$1 and enabled=true returning expires_at`,[account,bot,digest(code),label.trim()]);
   return result.rowCount?{message:`綁定 ${code}`,expiresMinutes:10,expiresAt:result.rows[0].expires_at}:null;
  }
- async function list(account){return (await db.query(`select r.id,r.bot_id as "botId",r.label,b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and r.active and b.enabled order by r.created_at desc limit 200`,[account])).rows;}
+ async function list(account,botId=null){return (await db.query(`select r.id,r.bot_id as "botId",r.label,b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and ($2::uuid is null or r.bot_id=$2::uuid) and r.active and b.enabled order by r.created_at desc limit 200`,[account,botId])).rows;}
  async function disable(account,id){if(!uuid.test(id||''))return false;return (await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where id=$1 and account_id=$2 and active returning id",[id,account])).rowCount===1;}
- async function history(account){
+ async function history(account,botId=null){
   return (await db.query(`select n.id,n.status,n.line_status as "lineStatus",n.created_at as "createdAt",b.bot_name as "botName",r.label
    ${includeIntegrations?' ,j.source_name as "integrationName"':''}
    from linebot_private.notifications n
    join linebot_private.bot_credentials b on b.id=n.bot_id and b.account_id=n.account_id
    join linebot_private.recipients r on r.id=n.recipient_id and r.account_id=n.account_id and r.bot_id=n.bot_id
    ${includeIntegrations?'left join linebot_private.integration_jobs j on j.notification_id=n.id':''}
-   where n.account_id=$1 order by n.created_at desc limit 100`,[account])).rows;
+   where n.account_id=$1 and ($2::uuid is null or n.bot_id=$2::uuid) order by n.created_at desc limit 100`,[account,botId])).rows;
  }
  async function send(account,{recipientId,message,requestId}){
   if(!uuid.test(recipientId||'')||!uuid.test(requestId||'')||typeof message!=='string'||!message.trim()||message.length>2000)return {error:'invalid'};

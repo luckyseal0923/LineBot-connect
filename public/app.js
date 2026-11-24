@@ -21,6 +21,7 @@ const notificationStates = {
 
 let renderController;
 let currentUsername;
+let currentPlatform;
 let registration;
 
 function escapeHtml(value) {
@@ -44,11 +45,15 @@ function goTo(hash) {
 }
 
 function replacePage(page) {
-  history.replaceState(null, '', '#' + page);
+  let target = page;
+  if (currentPlatform && /^(?:overview|bot|recipients|messages|integrations)(?:\?|$)/.test(target) && !target.includes('platform=')) target += (target.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
+  history.replaceState(null, '', '#' + target);
   return page;
 }
 
-async function api(path, { data, signal } = {}) {
+async function api(path, { data, signal, unscoped = false } = {}) {
+  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?)(?:\?|$)/.test(path);
+  if (currentPlatform && scoped && !unscoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   const response = await fetch('/independent-api/' + path, {
     method: data === undefined ? 'GET' : 'POST',
     headers: data === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -65,6 +70,7 @@ async function api(path, { data, signal } = {}) {
 }
 
 function buttonLink(text, href, style = 'primary') {
+  if (currentPlatform && /^#(?:overview|bot|recipients|messages|integrations)(?:\?|$)/.test(href) && !href.includes('platform=')) href += (href.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   return `<a class="button button-${style}" href="${escapeHtml(href)}">${escapeHtml(text)}</a>`;
 }
 
@@ -136,6 +142,8 @@ function setLayout(state, page, user) {
   guestLink.href = page === 'register' ? '#account' : '#register';
   guestLink.textContent = page === 'register' ? '登入' : '申請帳號';
   for (const link of navigation.querySelectorAll('[data-page]')) {
+    if (currentPlatform && ['overview','bot','recipients','integrations','messages'].includes(link.dataset.page)) link.href='#'+link.dataset.page+'?platform='+encodeURIComponent(currentPlatform.id);
+    else link.href='#'+link.dataset.page;
     if (link.dataset.page === page) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
@@ -170,7 +178,7 @@ async function render({ openOverviewIfApproved = false } = {}) {
   }
   if (signal.aborted) return;
 
-  if (user?.username !== currentUsername) webhookChecks.clear();
+  if (user?.username !== currentUsername) { webhookChecks.clear(); currentPlatform=undefined; }
   currentUsername = user?.username;
   if (!user) {
     if (!['account', 'register'].includes(page)) page = replacePage('account');
@@ -185,6 +193,15 @@ async function render({ openOverviewIfApproved = false } = {}) {
       page = replacePage('overview');
       params = new URLSearchParams();
     }
+    if (['overview','bot','recipients','integrations','messages'].includes(page)) {
+      try {
+        const available=(await api('platforms', {signal})).platforms;
+        if (signal.aborted) return;
+        const requested=params.get('platform');
+        currentPlatform=available.find(p=>p.id===(requested || currentPlatform?.id));
+        if (!currentPlatform) { page=replacePage('platforms'); params=new URLSearchParams(); }
+      } catch (error) { if(!signal.aborted) view.innerHTML=emptyState('無法載入數位平台',escapeHtml(error.message)); return; }
+    }
     setLayout('active', page, user);
     if (page === 'account') renderProfile(user);
     if (page === 'overview') await renderOverview(signal);
@@ -193,6 +210,7 @@ async function render({ openOverviewIfApproved = false } = {}) {
     if (page === 'recipients') await renderRecipients(params, signal);
     if (page === 'messages') await renderMessages(params, signal);
     if (page === 'integrations') await renderIntegrations(params, signal);
+    if (currentPlatform && ['overview','bot','recipients','integrations','messages'].includes(page) && !signal.aborted) view.insertAdjacentHTML('afterbegin', `<div class="platform-context"><strong>目前平台：${escapeHtml(currentPlatform.name || '平台名稱待補')}</strong> <a href="#platforms">切換平台</a></div>`);
   }
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
@@ -432,15 +450,15 @@ async function renderPlatforms(signal) {
     <section class="panel section-gap"><h2>我的平台服務</h2><div id="platform-list"><p class="muted">正在載入…</p></div></section>`;
   const list=view.querySelector('#platform-list');
   async function load() {
-    const [{platforms},{bots}]=await Promise.all([api('platforms',{signal}),api('bots',{signal})]);
+    const [{platforms},{bots}]=await Promise.all([api('platforms',{signal}),api('bots',{signal,unscoped:true})]);
     if(signal.aborted)return;
     const used=new Set(platforms.map(p=>p.botId).filter(Boolean));
     const available=bots.filter(b=>!used.has(b.id));
     if(!platforms.length){list.innerHTML=emptyState('尚未建立平台','新增平台後即可設定 LINE Bot。');return;}
     list.innerHTML=platforms.map(platform=>`<article class="integration-item" data-platform-id="${escapeHtml(platform.id)}">
-      <h3>${escapeHtml(platform.name || '平台名稱待補')}</h3><p class="muted small">${platform.botId ? `LINE Bot：${escapeHtml(platform.botName)}${platform.botEnabled?'':'（已停用）'}` : '尚未連結 Bot'}</p>
+      <h3>${escapeHtml(platform.name || '平台名稱待補')}</h3><p class="muted small">${platform.botId ? `LINE Bot：${escapeHtml(platform.botName)}${platform.botEnabled?'':'（已停用）'}` : '尚未連結 Bot'}</p>${buttonLink('進入平台','#overview?platform='+encodeURIComponent(platform.id),'primary')}
       <form class="form-stack" data-platform-action="rename"><label>平台名稱<input name="name" required maxlength="80" value="${escapeHtml(platform.name || '')}" placeholder="請填寫平台名稱"></label><button class="button button-secondary" type="submit">儲存平台名稱</button></form>
-      ${!platform.botId ? `<form class="form-stack" data-platform-action="attach"><label>連結 LINE Bot<select name="botId" required><option value="">請選擇尚未連結的平台 Bot</option>${available.map(bot=>`<option value="${escapeHtml(bot.id)}">${escapeHtml(bot.name)}</option>`).join('')}</select></label><button class="button button-secondary" type="submit"${available.length?'':' disabled'}>連結 Bot</button>${buttonLink('設定新的 Bot','#bot?setup=1','quiet')}</form>` : buttonLink('管理事件串接','#integrations?bot='+encodeURIComponent(platform.botId),'quiet')}
+      ${!platform.botId ? `<form class="form-stack" data-platform-action="attach"><label>連結 LINE Bot<select name="botId" required><option value="">請選擇尚未連結的平台 Bot</option>${available.map(bot=>`<option value="${escapeHtml(bot.id)}">${escapeHtml(bot.name)}</option>`).join('')}</select></label><button class="button button-secondary" type="submit"${available.length?'':' disabled'}>連結 Bot</button>${buttonLink('設定新的 Bot','#bot?setup=1&platform='+encodeURIComponent(platform.id),'quiet')}</form>` : buttonLink('管理事件串接','#integrations?bot='+encodeURIComponent(platform.botId)+'&platform='+encodeURIComponent(platform.id),'quiet')}
       <p class="feedback" data-platform-status role="status"></p></article>`).join('');
   }
   const form=view.querySelector('#platform-create');
@@ -867,7 +885,7 @@ async function renderIntegrations(params, signal) {
   }
   if (signal.aborted) return;
 
-  const selectedBot = params.get('bot');
+  const selectedBot = currentPlatform?.botId || params.get('bot');
   if (selectedBot) recipients = recipients.filter(recipient => recipient.botId === selectedBot);
   const filterItems = items => selectedBot ? items.filter(item => item.botId === selectedBot) : items;
   const path = 'integrations';
