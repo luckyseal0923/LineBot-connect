@@ -14,6 +14,7 @@ const noticeLabels = {
   enqueuing: ['正將通知送往接線站', 'neutral'],
   unconnected: ['核准時尚未連接接線站', 'warning'],
   disconnected: ['連接已斷開，請查看發送紀錄', 'warning'],
+  event_failed: ['核准後的事件處理失敗', 'warning'],
   retry: ['通知待重試', 'warning'],
   cancelled: ['通知已取消', 'warning'],
   failed: ['通知發送失敗', 'danger'],
@@ -48,8 +49,14 @@ function render(next) {
         <span><span class="muted small">${escapeHtml(item.label)}</span>
           <strong>${escapeHtml(item.name)}</strong><span class="muted small">${escapeHtml(item.location)}</span></span>
       </label>`).join('');
-    document.querySelector('#station-link').href = next.hubHref;
-    document.querySelector('#station-link').hidden = false;
+    document.querySelector('#equipment-mode').textContent = next.standalone ? '線上試用' : '本機測試';
+    if (!next.standalone) {
+      document.querySelector('#station-link').href = next.hubHref;
+      document.querySelector('#station-link').hidden = false;
+      document.querySelector('#connection-state').hidden = false;
+      document.querySelector('#inbox-heading').textContent = '模擬 LINE 收件匣';
+      document.querySelector('#review-description').textContent = '核准借用後，可在右側查看模擬 LINE 通知。';
+    }
   }
   data = next;
   submit.disabled = busy;
@@ -60,7 +67,7 @@ function render(next) {
   document.querySelector('#review-count').textContent = pending ? String(pending) : '';
   document.querySelector('#loan-count').textContent = `待審 ${pending} 筆，共 ${next.loans.length} 筆`;
   const rows = next.loans.length ? next.loans.map(loan => {
-    const notice = noticeLabels[loan.notice];
+    const notice = next.standalone && loan.notice !== 'event_failed' ? null : noticeLabels[loan.notice];
     const action = !loan.approvedAt ? ['approve', '核准借用'] : loan.canRetry ? ['retry', '重試送出通知'] : null;
     return `<article class="borrow-card">
       <div class="section-heading">
@@ -84,7 +91,11 @@ function render(next) {
   }
   for (const button of list.querySelectorAll('button')) button.disabled = busy;
   const receipts = next.loans.filter(loan => loan.message);
-  const messages = receipts.length ? `<ul class="receipt-list">${receipts.map(loan =>
+  const trialSummary = `<dl class="definition-grid equipment-summary">
+    <div><dt>待核准</dt><dd>${pending} 筆</dd></div>
+    <div><dt>已核准</dt><dd>${next.loans.length - pending} 筆</dd></div>
+  </dl>`;
+  const messages = next.standalone ? trialSummary : receipts.length ? `<ul class="receipt-list">${receipts.map(loan =>
     `<li class="receipt-item"><strong>${escapeHtml(loan.number)} 已收到</strong><p>${escapeHtml(loan.message)}</p></li>`
   ).join('')}</ul>` : `<p class="empty-state equipment-empty">${next.connected
     ? '核准一筆借用單後，通知會顯示在這裡。' : '先在接線站允許連接，再核准一筆借用單。'}</p>`;
@@ -159,7 +170,10 @@ list.addEventListener('click', event => {
   if (!button) return;
   mutate('/api/borrow/' + button.dataset.action, { id: button.dataset.loan }, next => {
     const loan = next.loans.find(item => item.id === button.dataset.loan);
-    if (loan?.notice === 'unconnected') report('借用單已核准。核准當下尚未連接接線站。', 'warning');
+    if (next.standalone) {
+      if (loan?.notice === 'event_failed') report('借用單已核准，後續事件處理失敗。', 'warning');
+      else report('借用單已核准。', 'success');
+    } else if (loan?.notice === 'unconnected') report('借用單已核准。核准當下尚未連接接線站。', 'warning');
     else if (loan?.canRetry) report('借用單已核准，可重試這筆通知。', 'warning');
     else report('已核准借用單，請查看通知狀態。', 'success');
   });

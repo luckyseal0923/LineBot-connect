@@ -53,6 +53,7 @@
 .borrow-card .chip { justify-self: start; }
 .borrow-note { margin-top: .3rem; }
 .equipment-receipts { background: #f7fbf8; }
+.equipment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: .75rem; }
 .receipt-list { display: grid; gap: .5rem; margin: .65rem 0 0; padding: 0; list-style: none; }
 .receipt-item {
   padding: .7rem;

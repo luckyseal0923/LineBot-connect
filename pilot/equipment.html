@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>教具借用平台 · 本機測試</title>
+  <title>虛擬教具借用平台</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/equipment.css">
   <script type="module" src="/equipment.js"></script>
@@ -13,7 +13,7 @@
     <div class="header-inner">
       <a href="#request" class="brand"><span class="brand-mark" aria-hidden="true">借</span><strong>教具借用平台</strong></a>
       <div class="button-row">
-        <span class="chip chip-neutral" id="connection-state">正在確認接線狀態</span>
+        <span class="chip chip-neutral" id="connection-state" hidden></span>
         <a id="station-link" class="button button-secondary" hidden>回接線站</a>
       </div>
     </div>
@@ -30,7 +30,7 @@
       <section id="request-page" aria-labelledby="request-heading">
         <div class="page-heading">
           <div><h1 id="request-heading">借用申請</h1><p>選一項教具，送出後可在「借用審核」核准。</p></div>
-          <span class="chip chip-warning">本機測試</span>
+          <span id="equipment-mode" class="chip chip-warning">試用平台</span>
         </div>
         <form id="borrowing-form" class="panel form-stack">
           <fieldset class="equipment-choice">
@@ -46,7 +46,7 @@
       </section>
       <section id="review-page" aria-labelledby="review-heading" hidden>
         <div class="page-heading">
-          <div><h1 id="review-heading">借用審核</h1><p>核准借用後，可在右側查看對應的模擬 LINE 通知。</p></div>
+          <div><h1 id="review-heading">借用審核</h1><p id="review-description">核對教具與用途，再核准待處理的借用單。</p></div>
           <a href="#request" class="button button-secondary">新增借用申請</a>
         </div>
         <div class="equipment-review-layout">
@@ -55,7 +55,7 @@
             <div id="borrow-requests"></div>
           </section>
           <section class="panel equipment-receipts" aria-labelledby="inbox-heading">
-            <h2 id="inbox-heading">模擬 LINE 收件匣</h2>
+            <h2 id="inbox-heading">審核摘要</h2>
             <div id="borrow-inbox" aria-live="polite"></div>
           </section>
         </div>

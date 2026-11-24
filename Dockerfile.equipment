@@ -1,0 +1,10 @@
+FROM node:24-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
+ENV EQUIPMENT_PUBLIC_ORIGIN=https://equipment-loan-test.wfhai.org
+COPY --chown=node:node equipment-web.mjs equipment-workspace.mjs ./
+COPY --chown=node:node pilot/equipment.html pilot/equipment.js pilot/equipment.css pilot/http.mjs ./pilot/
+COPY --chown=node:node public/styles.css ./public/
+USER node
+EXPOSE 3000
+CMD ["node", "equipment-web.mjs"]
