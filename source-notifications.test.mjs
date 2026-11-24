@@ -70,6 +70,16 @@ test('the configured event webhook receives submissions with the event key and m
   }
 });
 
+test('a submission is not reported as saved when no connection is configured', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'equip-unconfigured-'));
+  try {
+    const source = createSource({ directory });
+    source.createSession('session', Date.now() + 100000);
+    assert.throws(() => source.persist('session', [{ id: 'loan-1' }], { id: 'loan-1' }), /通知連接尚未設定/);
+    assert.equal(source.getSession('session').loans.length, 0);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('a submitted loan and its notification survive server restart in the same session', async () => {
   const { createEquipmentServer } = await import('./equipment-web.mjs');
   const directory = mkdtempSync(join(tmpdir(), 'equip-restart-'));

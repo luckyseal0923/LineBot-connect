@@ -38,6 +38,7 @@ export function createSource({ directory, fetcher = fetch, interval = 5000 }) {
     const session = state.sessions[id];
     if (!session) throw new Error('工作區不存在');
     const connection = config();
+    if (submitted && !connection) throw new Error('通知連接尚未設定');
     const jobs = submitted && connection ? [...state.jobs, {
       id: 'loan-submitted-' + submitted.id, message, integrationId: connection.integrationId, status: 'pending'
     }] : state.jobs;
