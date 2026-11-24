@@ -300,12 +300,17 @@ async function renderOverview(signal) {
       <h2 id="next-heading">你的下一步</h2>
       <p role="status">正在讀取工作空間…</p>
     </section>
+    <section class="panel section-gap" aria-labelledby="overview-map-title">
+      <div class="section-heading"><h2 id="overview-map-title">通知路線圖</h2>${buttonLink('管理串接', '#integrations', 'quiet')}</div>
+      <p class="muted small">外部平台觸發串接後，接線站依設定通知收件者。點選串接可凸顯路線。</p>
+      <div id="overview-map"><p class="muted" role="status">正在載入通知路線…</p></div>
+    </section>
     <section class="panel section-gap">
       <div class="section-heading"><h2>最近發送紀錄</h2>${buttonLink('查看紀錄', '#messages', 'quiet')}</div>
       <div id="overview-history"><p class="muted" role="status">正在載入紀錄…</p></div>
     </section>`;
-  const [botsResponse, recipientsResponse, historyResponse] = await Promise.allSettled([
-    api('bots', { signal }), api('recipients', { signal }), api('notifications', { signal })
+  const [botsResponse, recipientsResponse, historyResponse, integrationsResponse] = await Promise.allSettled([
+    api('bots', { signal }), api('recipients', { signal }), api('notifications', { signal }), api('integrations', { signal })
   ]);
   if (signal.aborted) return;
 
@@ -332,9 +337,90 @@ async function renderOverview(signal) {
     next.querySelector('#try-overview').addEventListener('click', () => render());
   }
 
+  const map = view.querySelector('#overview-map');
+  if (integrationsResponse.status === 'fulfilled' && recipientsResponse.status === 'fulfilled') renderRouteMap(map, integrationsResponse.value.integrations, recipientsResponse.value.recipients, signal);
+  else map.innerHTML = '<p class="muted">暫時無法載入通知路線，請重新整理頁面。</p>';
+
   const history = view.querySelector('#overview-history');
   if (historyResponse.status === 'fulfilled') renderHistory(history, historyResponse.value.notifications, 4);
   else history.innerHTML = '<p class="muted">暫時無法載入紀錄。</p>';
+}
+
+
+function renderRouteMap(target, integrations, recipients, signal) {
+  integrations = integrations.map(item => {
+    const recipient = recipients.find(person => person.id === item.recipientId);
+    return { ...item, botId: recipient?.botId || `unavailable:${item.id}`,
+      recipients: [{ id: item.recipientId, label: item.recipientLabel, active: Boolean(recipient) }] };
+  });
+  if (!integrations.length) {
+    target.innerHTML = emptyState('尚未建立通知路線', '建立外部串接並選擇收件者後，就能在這裡看到關係。', buttonLink('前往建立串接', '#integrations'));
+    return;
+  }
+  const groups = new Map();
+  for (const item of integrations) {
+    if (!groups.has(item.botId)) groups.set(item.botId, { name: item.botName, items: [] });
+    groups.get(item.botId).items.push(item);
+  }
+  target.innerHTML = [...groups.values()].map((group, groupIndex) => {
+    const people = new Map();
+    for (const item of group.items) for (const person of item.recipients) people.set(person.id, person);
+    return `<section class="route-group" aria-label="${escapeHtml(group.name)} 的通知路線">
+      <div class="route-scroll"><div class="route-canvas" data-group="${groupIndex}">
+        <svg class="route-lines" aria-hidden="true"></svg>
+        <div class="route-column"><h3>外部平台</h3>${group.items.map((item, i) => `<div class="route-node route-source" data-source="${i}"><small>外部平台觸發</small><strong>${escapeHtml(item.name)}</strong></div>`).join('')}</div>
+        <div class="route-column route-station"><h3>LINEBOT 接線站</h3><p class="route-bot">Bot：${escapeHtml(group.name)}</p>${group.items.map((item, i) => {
+          const status = !item.keyTail ? '金鑰已撤銷' : !item.enabled ? '已停用' : item.targetReady ? '啟用中' : '收件者或 Bot 無法使用';
+          return `<button type="button" class="route-node route-integration" data-route="${i}" aria-pressed="false"><small>串接${i + 1} · ${status}</small><strong>${escapeHtml(item.name)}</strong><small>${item.keyTail ? '金鑰尾碼 ' + escapeHtml(item.keyTail) : '無有效金鑰'}</small></button>`;
+        }).join('')}</div>
+        <div class="route-column"><h3>收件者</h3>${[...people.values()].map((person, i) => `<div class="route-node route-person" data-person="${i}"><small>收件對象${person.active ? '' : ' · 收件者或 Bot 無法使用'}</small><strong>${escapeHtml(person.label)}</strong></div>`).join('')}</div>
+      </div></div>
+      <p class="muted small route-description" aria-live="polite">顯示所有設定的路線；外部系統的實際事件名稱由外部系統決定。</p>
+    </section>`;
+  }).join('');
+  [...target.querySelectorAll('.route-canvas')].forEach((canvas, groupIndex) => {
+    const group = [...groups.values()][groupIndex];
+    const people = [...new Map(group.items.flatMap(item => item.recipients.map(person => [person.id, person]))).values()];
+    const svg = canvas.querySelector('.route-lines');
+    const buttons = [...canvas.querySelectorAll('[data-route]')];
+    const description = canvas.closest('.route-group').querySelector('.route-description');
+    let selected = -1;
+    function draw() {
+      if (!canvas.isConnected) return;
+      const bounds = canvas.getBoundingClientRect();
+      svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+      svg.replaceChildren();
+      const line = (from, to, highlighted) => {
+        if (!from || !to) return;
+        const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+        const x1 = a.right - bounds.left, y1 = a.top + a.height / 2 - bounds.top;
+        const x2 = b.left - bounds.left, y2 = b.top + b.height / 2 - bounds.top;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + (x2-x1)/2} ${y1}, ${x1 + (x2-x1)/2} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('class', highlighted ? 'route-line is-highlighted' : selected < 0 ? 'route-line' : 'route-line is-dimmed');
+        svg.append(path);
+      };
+      group.items.forEach((item, i) => {
+        const button = buttons[i];
+        line(canvas.querySelector(`[data-source="${i}"]`), button, selected === i);
+        for (const person of item.recipients) {
+          const index = people.findIndex(p => p.id === person.id);
+          line(button, canvas.querySelector(`[data-person="${index}"]`), selected === i);
+        }
+      });
+    }
+    buttons.forEach((button, i) => button.addEventListener('click', () => {
+      selected = selected === i ? -1 : i;
+      buttons.forEach((b, index) => b.setAttribute('aria-pressed', String(index === selected)));
+      description.textContent = selected < 0 ? '顯示所有設定的路線；外部系統的實際事件名稱由外部系統決定。' :
+        `${group.items[i].name} → ${group.items[i].recipients.map(person => person.label + (person.active ? '' : '（收件者或 Bot 無法使用）')).join('、')}`;
+      draw();
+    }));
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+    draw();
+  });
 }
 
 function confirmAction(title, description, label, signal) {
