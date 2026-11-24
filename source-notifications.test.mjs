@@ -43,6 +43,33 @@ test('pairing stores credential on backend and never outputs it', async () => {
   } finally { rmSync(directory, { recursive:true, force:true }); }
 });
 
+test('the configured event webhook receives submissions with the event key and message', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'equip-webhook-'));
+  const oldKey = process.env.EQUIPMENT_LINEBOT_API_KEY;
+  const oldEndpoint = process.env.EQUIPMENT_LINEBOT_ENDPOINT;
+  const endpoint = 'https://linebot-next.wfhai.org/api/v1/webhooks/6af8199e-0e63-4ff3-8248-2544af81150a';
+  try {
+    process.env.EQUIPMENT_LINEBOT_API_KEY = 'example-key';
+    process.env.EQUIPMENT_LINEBOT_ENDPOINT = endpoint;
+    const calls = [];
+    const source = createSource({ directory, fetcher: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ messageId: 'message-1' }), { status: 202 });
+    }});
+    source.createSession('session', Date.now() + 100000);
+    source.persist('session', [{ id: 'loan-1' }], { id: 'loan-1' });
+    await source.flush();
+    assert.equal(calls[0].url, endpoint);
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer example-key');
+    assert.equal(calls[0].options.headers['Idempotency-Key'], 'loan-submitted-loan-1');
+    assert.equal(JSON.parse(calls[0].options.body).message, message);
+  } finally {
+    if (oldKey === undefined) delete process.env.EQUIPMENT_LINEBOT_API_KEY; else process.env.EQUIPMENT_LINEBOT_API_KEY = oldKey;
+    if (oldEndpoint === undefined) delete process.env.EQUIPMENT_LINEBOT_ENDPOINT; else process.env.EQUIPMENT_LINEBOT_ENDPOINT = oldEndpoint;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('a submitted loan and its notification survive server restart in the same session', async () => {
   const { createEquipmentServer } = await import('./equipment-web.mjs');
   const directory = mkdtempSync(join(tmpdir(), 'equip-restart-'));

@@ -20,8 +20,14 @@ export function createSource({ directory, fetcher = fetch, interval = 5000 }) {
   let timer;
   const config = () => {
     const key = process.env.EQUIPMENT_LINEBOT_API_KEY;
-    if (key) return { apiKey: key, integrationId: createHash('sha256').update(key).digest('hex') };
-    return read(configPath, null);
+    const stored = key ? { apiKey: key } : read(configPath, null);
+    if (!stored) return null;
+    const endpoint = process.env.EQUIPMENT_LINEBOT_ENDPOINT || origin + '/api/v1/send';
+    const url = new URL(endpoint);
+    if (url.origin !== origin || url.search || url.hash || !(/^\/api\/v1\/webhooks\/[0-9a-f-]{36}$/i.test(url.pathname) || url.pathname === '/api/v1/send')) {
+      throw new Error('Invalid LINEBOT endpoint');
+    }
+    return { ...stored, endpoint, integrationId: stored.integrationId || createHash('sha256').update(key + ':' + endpoint).digest('hex') };
   };
   function createSession(id, expires) {
     const sessions = Object.fromEntries(Object.entries(state.sessions).filter(([, value]) => value.expires > Date.now()));
@@ -45,7 +51,7 @@ export function createSource({ directory, fetcher = fetch, interval = 5000 }) {
       if (!connection) return;
       for (const job of state.jobs.filter(x => x.status === 'pending' && x.integrationId === connection.integrationId)) {
         try {
-          const response = await fetcher(origin + '/api/v1/send', {
+          const response = await fetcher(connection.endpoint, {
             method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
             headers: { Authorization: 'Bearer ' + connection.apiKey, 'Content-Type': 'application/json', 'Idempotency-Key': job.id },
             body: JSON.stringify({ message: job.message })
