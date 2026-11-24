@@ -4,7 +4,7 @@ const lists = {
   notifications: { view: 'admin_notifications', order: 'created_at desc, username, bot_name, recipient_label' }
 };
 const accountStatuses = ['pending', 'active', 'disabled'];
-const notificationStatuses = ['accepted', 'failed', 'unknown', 'sending'];
+const notificationStatuses = ['accepted', 'failed', 'unknown', 'sending', 'queued', 'cancelled'];
 const accountPattern = /^[a-z0-9_]{3,32}$/;
 const pageSize = 50;
 const summarySql = `select (select count(*)::int from linebot_private.admin_accounts) as accounts,

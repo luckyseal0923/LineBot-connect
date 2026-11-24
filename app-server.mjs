@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
+import { createExternalApi } from './external-api.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook}) {
- const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook});
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations}) {
+ const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations});
+ const externalApi=createExternalApi({integrations,allow});
  const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
  const root=fileURLToPath(new URL('./public/',import.meta.url));
  const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/styles.css',['styles.css','text/css; charset=utf-8']]]);
@@ -15,6 +17,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/health' && ['GET','HEAD'].includes(req.method)){res.writeHead(200,headers);return res.end(req.method==='HEAD'?undefined:'ok');}
   if(path.startsWith('/independent-api/')){try{await api(req,res);}catch{res.writeHead(503,headers);res.end();}return;}
+  if(path.startsWith('/api/v1/'))return externalApi(req,res,path);
   const match=/^\/webhooks\/line\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(path);
   if(match){
    if(req.method!=='POST'){res.writeHead(405,{...headers,Allow:'POST'});return res.end();}

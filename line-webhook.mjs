@@ -7,7 +7,7 @@ function assertIdentity(userId) {
   if (typeof userId !== 'string' || !idPattern.test(userId)) throw new Error('Invalid owner');
 }
 export function createCredentialVault(key, { context = 'channel-secret', maxBytes = 4096 } = {}) {
-  if (!['channel-secret', 'line-event', 'line-recipient', 'channel-access-token', 'admin-totp'].includes(context) || !Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 1048576) throw new Error('Invalid vault configuration');
+  if (!['channel-secret', 'line-event', 'line-recipient', 'channel-access-token', 'admin-totp', 'integration-message'].includes(context) || !Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 1048576) throw new Error('Invalid vault configuration');
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('A 32-byte key is required');
   const vaultKey = Buffer.from(key);
   return {

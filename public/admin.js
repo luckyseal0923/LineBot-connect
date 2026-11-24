@@ -16,7 +16,9 @@ const sendStates = {
   accepted: ['LINE 已受理', 'success'],
   failed: ['發送失敗', 'danger'],
   unknown: ['結果未確認', 'warning'],
-  sending: ['處理中', 'neutral']
+  sending: ['處理中', 'neutral'],
+  queued: ['等候發送', 'neutral'],
+  cancelled: ['已取消', 'neutral']
 };
 let controller;
 let flash;
@@ -442,6 +444,7 @@ function recordDetail(record) {
       <div><dt>使用者</dt><dd>${escapeHtml(record.display_name)}（${escapeHtml(record.username)}）</dd></div>
       <div><dt>LINE Bot</dt><dd>${escapeHtml(record.bot_name)}</dd></div>
       <div><dt>收件對象</dt><dd>${escapeHtml(record.recipient_label)}</dd></div>
+      <div><dt>發送來源</dt><dd>${escapeHtml(record.integration_name ?? '接線站手動發送')}</dd></div>
       <div><dt>狀態</dt><dd>${chip(label, tone)}</dd></div>
       <div><dt>發送時間</dt><dd>${time(record.created_at)}</dd></div>
       <div><dt>處理完成</dt><dd>${time(record.completed_at)}</dd></div>
@@ -465,7 +468,8 @@ async function renderRecords(params, signal) {
         <label>發送狀態<select name="status">
           <option value="">全部狀態</option><option value="accepted">LINE 已受理</option>
           <option value="failed">發送失敗</option><option value="unknown">結果未確認</option>
-          <option value="sending">處理中</option><option value="attention">失敗或未確認</option>
+          <option value="queued">等候發送</option><option value="sending">處理中</option>
+          <option value="cancelled">已取消</option><option value="attention">失敗或未確認</option>
         </select></label>
         <div class="button-row"><button class="button button-primary" type="submit">套用篩選</button>${link('清除', '#records', 'quiet')}</div>
       </form>
@@ -477,9 +481,10 @@ async function renderRecords(params, signal) {
   filterSubmit(form, 'records');
   const target = view.querySelector('#record-results');
   await filteredList(target, 'notifications', params, signal, data => {
-    target.innerHTML = table('發送紀錄', ['時間', '使用者', 'Bot', '收件對象名稱', '狀態', 'LINE 狀態碼', '詳情'],
+    target.innerHTML = table('發送紀錄', ['時間', '使用者', 'Bot', '收件對象名稱', '來源', '狀態', 'LINE 狀態碼', '詳情'],
       data.items.map((item, index) => [
         time(item.created_at), userLink(item), escapeHtml(item.bot_name), escapeHtml(item.recipient_label),
+        escapeHtml(item.integration_name ?? '手動發送'),
         chip(...(sendStates[item.status] ?? sendStates.unknown)), escapeHtml(item.line_status ?? '—'),
         `<button class="button button-quiet" type="button" data-record="${index}">查看詳情</button>`
       ])) + pager('records', params, data);

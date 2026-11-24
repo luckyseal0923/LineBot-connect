@@ -1,10 +1,12 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createLineTextSender } from './line-client.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const digest=s=>createHash('sha256').update(s).digest('hex');
 
 // The only permitted target is a user who redeemed a one-time code in this bot's signed webhook.
-export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=fetch}) {
+export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=fetch,includeIntegrations=false}) {
  if(!db?.query||!recipientVault?.open||!tokenVault?.open||!Buffer.isBuffer(key)||key.length!==32)throw Error('Missing notification dependencies');
+ const sendText=createLineTextSender({fetchImpl});
  const lineHash=(bot,id)=>createHmac('sha256',key).update(`recipient:v1:${bot}:${id}`).digest('hex');
  async function pair(account,bot,events){
   if(!uuid.test(bot||''))return;
@@ -33,7 +35,15 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
  }
  async function list(account){return (await db.query(`select r.id,r.bot_id as "botId",r.label,b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and r.active and b.enabled order by r.created_at desc limit 200`,[account])).rows;}
  async function disable(account,id){if(!uuid.test(id||''))return false;return (await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where id=$1 and account_id=$2 and active returning id",[id,account])).rowCount===1;}
- async function history(account){return (await db.query(`select n.id,n.status,n.line_status as "lineStatus",n.created_at as "createdAt",b.bot_name as "botName",r.label from linebot_private.notifications n join linebot_private.bot_credentials b on b.id=n.bot_id join linebot_private.recipients r on r.id=n.recipient_id where n.account_id=$1 order by n.created_at desc limit 100`,[account])).rows;}
+ async function history(account){
+  return (await db.query(`select n.id,n.status,n.line_status as "lineStatus",n.created_at as "createdAt",b.bot_name as "botName",r.label
+   ${includeIntegrations?' ,j.source_name as "integrationName"':''}
+   from linebot_private.notifications n
+   join linebot_private.bot_credentials b on b.id=n.bot_id and b.account_id=n.account_id
+   join linebot_private.recipients r on r.id=n.recipient_id and r.account_id=n.account_id and r.bot_id=n.bot_id
+   ${includeIntegrations?'left join linebot_private.integration_jobs j on j.notification_id=n.id':''}
+   where n.account_id=$1 order by n.created_at desc limit 100`,[account])).rows;
+ }
  async function send(account,{recipientId,message,requestId}){
   if(!uuid.test(recipientId||'')||!uuid.test(requestId||'')||typeof message!=='string'||!message.trim()||message.length>2000)return {error:'invalid'};
   const r=await db.query(`select r.bot_id,r.encrypted_line_id,b.encrypted_access_token from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id join linebot_private.accounts a on a.id=r.account_id where r.id=$1 and r.account_id=$2 and r.active and b.enabled and a.status='active'`,[recipientId,account]);
@@ -44,8 +54,8 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
   let status='unknown',code=null;
   try {
    const to=recipientVault.open(account,row.encrypted_line_id),token=tokenVault.open(account,row.encrypted_access_token);
-   const response=await fetchImpl('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','X-Line-Retry-Key':requestId},body:JSON.stringify({to,messages:[{type:'text',text:message}]}),redirect:'error',signal:AbortSignal.timeout(10000)});
-   code=response.status;status=response.ok||(code===409&&response.headers.get('x-line-accepted-request-id'))?'accepted':code>=400&&code<500?'failed':'unknown';
+   const sent=await sendText({to,token,message,requestId});
+   code=sent.lineStatus;status=sent.status;
   }catch{status='unknown';}
   await db.query('update linebot_private.notifications set status=$1,line_status=$2,completed_at=now() where id=$3 and account_id=$4',[status,code,requestId,account]);
   return {status};

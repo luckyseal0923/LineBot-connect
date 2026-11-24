@@ -14,7 +14,9 @@ const notificationStates = {
   accepted: ['LINE 已受理', 'success'],
   failed: ['發送失敗', 'danger'],
   unknown: ['結果未確認', 'warning'],
-  sending: ['處理中', 'neutral']
+  sending: ['處理中', 'neutral'],
+  queued: ['等候發送', 'neutral'],
+  cancelled: ['已取消', 'neutral']
 };
 
 let renderController;
@@ -189,10 +191,7 @@ async function render({ openOverviewIfApproved = false } = {}) {
     if (page === 'bot') await renderBots(params, signal);
     if (page === 'recipients') await renderRecipients(params, signal);
     if (page === 'messages') await renderMessages(params, signal);
-    if (page === 'integrations') {
-      view.innerHTML = pageHeading('外部串接', '此功能開發中。') +
-        `<section class="panel">${buttonLink('前往發送通知', '#messages')}</section>`;
-    }
+    if (page === 'integrations') await renderIntegrations(signal);
   }
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
@@ -288,7 +287,8 @@ function renderHistory(target, records, limit = records.length) {
     const [label, tone] = notificationStates[record.status] ?? notificationStates.unknown;
     return `<li>
       <div><strong>${escapeHtml(record.botName)} <span aria-hidden="true">→</span> ${escapeHtml(record.label)}</strong>
-        <time datetime="${escapeHtml(record.createdAt)}">${dateTime(record.createdAt)}</time></div>
+        <time datetime="${escapeHtml(record.createdAt)}">${dateTime(record.createdAt)}</time>
+        ${record.integrationName ? `<small class="record-source">${escapeHtml(record.integrationName)}</small>` : ''}</div>
       ${chip(label, tone)}
     </li>`;
   }).join('')}</ul>`;
@@ -323,7 +323,8 @@ async function renderOverview(signal) {
     const recipientPage = enabled.length === 1 ? '#recipients?bot=' + encodeURIComponent(enabled[0].id) : '#recipients';
     next.innerHTML = `<h2 id="next-heading">${ready ? '準備好發送通知' : '新增第一位收件對象'}</h2>
       <p>${ready ? '選擇 Bot 和已配對的收件對象，發送文字通知。' : '在 LINE 完成 Webhook 驗證後，請收件者把配對文字傳給 Bot。'}</p>
-      ${buttonLink(label, ready ? '#messages' : recipientPage)}`;
+      <div class="button-row">${buttonLink(label, ready ? '#messages' : recipientPage)}
+        ${ready ? buttonLink('接入數位平台', '#integrations', 'secondary') : ''}</div>`;
   } else {
     next.innerHTML = `<h2 id="next-heading">暫時無法讀取設定進度</h2>
       <p>你可以重新查詢，或使用選單開啟需要的頁面。</p>
@@ -734,6 +735,203 @@ async function renderRecipients(params, signal) {
       submit.disabled = false;
     }
   });
+}
+
+async function renderIntegrations(signal) {
+  view.innerHTML = pageHeading('外部串接', '讓報名、簽核等數位平台在事件發生時，自動用你的 LINE Bot 發送通知。',
+    buttonLink('查看發送紀錄', '#messages', 'secondary')) +
+    '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
+  const workspace = view.querySelector('#integration-workspace');
+  let initial, recipients;
+  try {
+    [initial, { recipients }] = await Promise.all([api('integrations', { signal }), api('recipients', { signal })]);
+  } catch (error) {
+    if (!signal.aborted) showPageError(workspace, error.message);
+    return;
+  }
+  if (signal.aborted) return;
+
+  const path = 'integrations';
+  const recipientOptions = selected => option('', '請選擇 Bot 與收件對象') + recipients.map(recipient =>
+    `<option value="${escapeHtml(recipient.id)}"${recipient.id === selected ? ' selected' : ''}>${escapeHtml(recipient.botName)} ／ ${escapeHtml(recipient.label)}</option>`
+  ).join('');
+  const fields = (name, recipientId) => `
+    <label>數位平台名稱<input name="name" required maxlength="80" value="${escapeHtml(name)}" placeholder="例如 課程報名平台"></label>
+    <label>LINE Bot 與收件對象<select name="recipientId" required>${recipientOptions(recipientId)}</select></label>`;
+  const firstRecipient = recipients.length === 1 ? recipients[0].id : '';
+  const example = [
+    '$headers = @{',
+    '  Authorization = "Bearer $env:LINEBOT_INTEGRATION_KEY"',
+    "  'Idempotency-Key' = 'signup-1042'",
+    '}',
+    `Invoke-RestMethod -Method Post -Uri '${initial.endpoint}' -Headers $headers -ContentType 'application/json; charset=utf-8' -Body '{"message":"收到一筆新報名，請登入平台查看。"}'`
+  ].join('\n');
+
+  workspace.innerHTML = `
+    <section class="panel integration-secret" id="integration-secret" aria-labelledby="integration-secret-title" hidden></section>
+    <div class="split-layout integration-layout">
+      <section class="panel" aria-labelledby="integration-create-title">
+        <h2 id="integration-create-title">新增外部串接</h2>
+        <p class="muted">選擇這個數位平台發送時要用的 Bot 和收件對象。</p>
+        ${recipients.length ? `<form id="integration-create" class="form-stack">
+          ${fields('', firstRecipient)}
+          <button type="submit" class="button button-primary">建立並取得金鑰</button>
+        </form>` : emptyState('先配對收件對象', '完成 LINE 配對後，即可建立串接。', buttonLink('前往配對', '#recipients'))}
+      </section>
+      <section class="panel" aria-labelledby="integration-list-title">
+        <div class="section-heading"><h2 id="integration-list-title">我的串接</h2>
+          <button type="button" class="button button-quiet" id="integration-refresh">重新查詢</button>
+        </div>
+        <p class="feedback" role="status" id="integration-feedback"></p>
+        <div id="integration-list"></div>
+      </section>
+    </div>
+    <section class="panel section-gap" aria-labelledby="integration-connect-title">
+      <h2 id="integration-connect-title">設定數位平台</h2>
+      <p class="muted">請在數位平台的後端保存串接金鑰。選好觸發時機，例如新報名送出，再由後端發送請求。</p>
+      ${copyField('integration-endpoint', '發送網址（POST）', initial.endpoint, '複製網址')}
+      <details class="integration-example copy-field">
+        <summary>查看 PowerShell 呼叫範例</summary>
+        <p class="muted small"><code>LINEBOT_INTEGRATION_KEY</code> 是後端環境變數。<code>Idempotency-Key</code> 請填每筆事件的固定編號，重試時沿用同一值。</p>
+        <label for="integration-example-code">範例指令</label>
+        <textarea id="integration-example-code" class="integration-code" rows="7" readonly>${escapeHtml(example)}</textarea>
+        <button class="button button-secondary" type="button" data-copy="integration-example-code">複製範例</button>
+        <p class="feedback" data-copy-status="integration-example-code" role="status"></p>
+      </details>
+      <p class="muted small">成功排隊後會收到傳訊編號，可用同一組金鑰查詢 <code>GET /api/v1/messages/{傳訊編號}</code>。</p>
+    </section>`;
+
+  const list = workspace.querySelector('#integration-list');
+  const feedback = workspace.querySelector('#integration-feedback');
+  const secret = workspace.querySelector('#integration-secret');
+  const testKeys = new Map();
+  let items = initial.integrations;
+  let busy = false;
+
+  function renderList() {
+    if (!items.length) {
+      list.innerHTML = emptyState('尚未建立串接', '新增串接後，即可取得供數位平台呼叫的金鑰。');
+      return;
+    }
+    list.innerHTML = items.map(item => {
+      const status = !item.keyTail ? ['金鑰已撤銷', 'neutral'] :
+        !item.enabled ? ['已停用', 'neutral'] : item.targetReady ? ['啟用中', 'success'] : ['待重新配對或啟用 Bot', 'warning'];
+      const action = (type, label, disabled = false) =>
+        `<button type="button" class="button button-quiet" data-integration-action="${type}"${disabled ? ' disabled' : ''}>${label}</button>`;
+      return `<article class="integration-item" data-integration-id="${escapeHtml(item.id)}">
+        <div class="section-heading"><h3>${escapeHtml(item.name)}</h3>${chip(...status)}</div>
+        <p class="muted small">${escapeHtml(item.botName)} → ${escapeHtml(item.recipientLabel)}</p>
+        ${item.keyTail ? `<p class="muted small">金鑰尾碼 <code>${escapeHtml(item.keyTail)}</code></p>` : ''}
+        <div class="button-row">
+          ${action('test', '發送測試', !item.enabled || !item.targetReady)}
+          ${item.enabled ? action('disable', '停用') : action('enable', '啟用', !item.targetReady || !item.keyTail)}
+          ${action('rotate', item.keyTail ? '換發金鑰' : '產生新金鑰')}
+          ${item.keyTail ? action('revoke', '撤銷金鑰') : ''}
+        </div>
+        ${recipients.length ? `<details class="integration-edit"><summary>修改名稱或收件人</summary>
+          <form class="form-stack">${fields(item.name, item.recipientId)}
+            <button class="button button-secondary" type="submit">儲存串接設定</button>
+          </form></details>` : ''}
+      </article>`;
+    }).join('');
+  }
+
+  function hideSecret() {
+    secret.replaceChildren();
+    secret.hidden = true;
+  }
+
+  function showSecret(key) {
+    secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">請保存串接金鑰</h2>
+        <button class="button button-quiet" type="button" data-hide-key>關閉</button></div>
+      <p class="muted">金鑰只會顯示這一次。請複製到數位平台的後端環境變數。</p>
+      ${copyField('integration-key', '串接金鑰', key, '複製金鑰')}`;
+    secret.querySelector('input').autocomplete = 'off';
+    secret.hidden = false;
+    bindCopyFields(secret);
+    secret.querySelector('[data-hide-key]').addEventListener('click', hideSecret);
+    secret.querySelector('h2').focus();
+  }
+
+  async function refreshList() {
+    const updated = await api(path, { signal });
+    if (!signal.aborted) {
+      items = updated.integrations;
+      renderList();
+    }
+  }
+
+  async function change(button, route, data, success, after) {
+    if (busy) return;
+    busy = true;
+    button.disabled = true;
+    report(feedback, '正在處理…');
+    try {
+      const result = await api(route, { data, signal });
+      if (signal.aborted) return;
+      if (result.apiKey) showSecret(result.apiKey);
+      after?.();
+      report(feedback, success, 'success');
+      try { await refreshList(); }
+      catch { if (!signal.aborted) report(feedback, `${success} 請重新查詢清單。`, 'warning'); }
+    } catch (error) {
+      if (!signal.aborted) report(feedback, error.message, 'danger');
+    } finally {
+      busy = false;
+      button.disabled = false;
+    }
+  }
+
+  const createForm = workspace.querySelector('#integration-create');
+  createForm?.addEventListener('submit', event => {
+    event.preventDefault();
+    change(createForm.querySelector('button'), path, Object.fromEntries(new FormData(createForm)),
+      '串接已建立。', () => createForm.reset());
+  });
+  list.addEventListener('submit', event => {
+    event.preventDefault();
+    const form = event.target;
+    const id = form.closest('[data-integration-id]').dataset.integrationId;
+    change(form.querySelector('button'), `${path}/${id}/edit`, Object.fromEntries(new FormData(form)), '已儲存串接設定。');
+  });
+  list.addEventListener('click', event => {
+    const button = event.target.closest('[data-integration-action]');
+    if (!button || busy) return;
+    const item = items.find(entry => entry.id === button.closest('[data-integration-id]').dataset.integrationId);
+    const action = button.dataset.integrationAction;
+    const confirmation = {
+      test: `將使用「${item.botName}」傳送測試通知給「${item.recipientLabel}」。確定發送？`,
+      disable: '確定停用這個串接？等候發送的通知將取消。',
+      rotate: '換發金鑰後，請將新的金鑰填回數位平台。現在換發？',
+      revoke: '撤銷後，持有舊金鑰的數位平台會失去此串接的存取權。確定撤銷？'
+    };
+    if (confirmation[action] && !window.confirm(confirmation[action])) return;
+    const success = {
+      test: '測試通知已送出處理，請查看發送紀錄並向收件人確認。',
+      disable: '串接已停用。', enable: '串接已啟用。',
+      rotate: '新金鑰已產生。', revoke: '金鑰已撤銷。'
+    };
+    if (action === 'test' && !testKeys.has(item.id)) testKeys.set(item.id, 'test-' + crypto.randomUUID());
+    const after = action === 'test' ? () => testKeys.delete(item.id) : action === 'revoke' ? hideSecret : undefined;
+    change(button, `${path}/${item.id}/${action}`, action === 'test' ? { eventKey: testKeys.get(item.id) } : {}, success[action], after);
+  });
+  workspace.querySelector('#integration-refresh').addEventListener('click', async event => {
+    if (busy) return;
+    busy = true;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await refreshList();
+      if (!signal.aborted) report(feedback, '已更新串接清單。', 'success');
+    } catch (error) {
+      if (!signal.aborted) report(feedback, error.message, 'danger');
+    } finally {
+      busy = false;
+      button.disabled = false;
+    }
+  });
+  renderList();
+  bindCopyFields(workspace);
 }
 
 async function renderMessages(params, signal) {

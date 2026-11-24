@@ -2,7 +2,7 @@
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -80,6 +80,46 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(typeof data.botId!=='string'||!botIdPattern.test(data.botId)){send(res,400,{error:'請選擇要停用的 LINE Bot。'});return true;}
         if(!await bots.disable(user.id,data.botId)){send(res,404,{error:'找不到 LINE Bot。'});return true;}
         send(res,200,{message:'已停用'});return true;
+      }
+      const integrationAction = /^\/independent-api\/integrations\/([0-9a-f-]{36})\/(edit|enable|disable|rotate|revoke|test)$/i.exec(path);
+      if (path === '/independent-api/integrations' || (integrationAction && botIdPattern.test(integrationAction[1]))) {
+        const user = await accounts.me(getToken(req));
+        if (!user) { send(res, 401, { error: '請先登入。' }); return true; }
+        if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
+        if (!integrations) { send(res, 503, { error: '外部串接尚未開放。' }); return true; }
+        if (req.method === 'GET' && !integrationAction) {
+          send(res, 200, { integrations: await integrations.list(user.id), endpoint: new URL('/api/v1/send', origin).href });
+          return true;
+        }
+        if (req.method !== 'POST') {
+          send(res, 405, { error: '請使用指定的 HTTP 方法。' }, { Allow: integrationAction ? 'POST' : 'GET, POST' });
+          return true;
+        }
+        if (!await allow('integration-manage') || !await allow(`integration-manage:${user.id}`)) {
+          send(res, 429, { error: '操作過於頻繁，請稍候再試。' }); return true;
+        }
+
+        let result;
+        const action = integrationAction?.[2].toLowerCase();
+        const id = integrationAction?.[1];
+        if (!action) result = await integrations.create(user.id, await read(req));
+        else if (action === 'edit') result = await integrations.edit(user.id, id, await read(req));
+        else if (action === 'test') result = await integrations.testSend(user.id, id, (await read(req))?.eventKey);
+        else result = await integrations.manage(user.id, id, action);
+
+        const failures = {
+          invalid: [400, '請確認名稱、收件對象或測試資料。'],
+          unavailable: [404, '找不到可操作的串接，請確認金鑰與收件對象。'],
+          disabled: [403, '請先啟用串接。'],
+          target_unavailable: [422, '請選擇自己的啟用中 Bot 與已配對收件人。'],
+          event_conflict: [409, '此測試編號已有其他通知。'],
+          rate_limited: [429, '發送過於頻繁，請稍候再試。']
+        };
+        if (result.error) {
+          const [status, error] = failures[result.error];
+          send(res, status, { error });
+        } else send(res, action ? 200 : 201, result);
+        return true;
       }
       if(path.startsWith('/independent-api/notification') || path.startsWith('/independent-api/recipient')) {
         if(!notifications){send(res,503,{error:'通知功能尚未開放。'});return true;}

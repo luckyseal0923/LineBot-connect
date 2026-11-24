@@ -3,7 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY --chown=node:node production-server.mjs app-server.mjs accounts.mjs independent-api.mjs bot-store.mjs line-client.mjs line-webhook.mjs event-store.mjs request-limiter.mjs db-role-preflight.mjs db-tls-config.mjs notifications.mjs line-quota.mjs ./
+COPY --chown=node:node production-server.mjs app-server.mjs accounts.mjs independent-api.mjs bot-store.mjs line-client.mjs line-webhook.mjs event-store.mjs request-limiter.mjs db-role-preflight.mjs db-tls-config.mjs notifications.mjs line-quota.mjs external-integrations.mjs external-api.mjs ./
 COPY --chown=node:node public ./public
 USER node
 EXPOSE 3000

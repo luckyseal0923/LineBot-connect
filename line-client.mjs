@@ -37,3 +37,29 @@ export function createLineWebhookCheck({ fetchImpl = fetch } = {}) {
     }
   };
 }
+
+export function createLineTextSender({ fetchImpl = fetch } = {}) {
+  return async function sendText({ to, token, message, requestId }) {
+    let response;
+    try {
+      response = await fetchImpl('https://api.line.me/v2/bot/message/push', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Line-Retry-Key': requestId },
+        body: JSON.stringify({ to, messages: [{ type: 'text', text: message }] }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000)
+      });
+    } catch {
+      return { status: 'unknown', lineStatus: null, lineMessageId: null };
+    }
+
+    const lineStatus = response.status;
+    const accepted = response.ok || (lineStatus === 409 && response.headers.get('x-line-accepted-request-id'));
+    const status = accepted ? 'accepted' : lineStatus >= 400 && lineStatus < 500 ? 'failed' : 'unknown';
+    const payload = accepted && typeof response.json === 'function' ? await response.json().catch(() => null) : null;
+    if (!accepted && response.body) await response.body.cancel().catch(() => {});
+    const id = payload?.sentMessages?.[0]?.id;
+    const lineMessageId = accepted && typeof id === 'string' && /^[0-9]{1,64}$/.test(id) ? id : null;
+    return { status, lineStatus, lineMessageId };
+  };
+}

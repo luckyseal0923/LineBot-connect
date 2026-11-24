@@ -412,6 +412,17 @@ input[readonly] { background: #f6faf7; }
 .record-list li:last-child { border-bottom: 0; }
 .record-list li > div { min-width: 0; }
 .record-list li strong { display: block; overflow-wrap: anywhere; }
+.record-source { display: block; color: var(--muted); overflow-wrap: anywhere; }
+
+.integration-layout { align-items: start; }
+.integration-secret { margin-bottom: 1.15rem; }
+.integration-item { padding-block: .8rem; }
+.integration-item + .integration-item { border-top: 1px solid var(--border); }
+.integration-item .button-row { margin-block: .55rem; }
+.integration-edit, .integration-example { margin-top: .9rem; }
+.integration-edit summary, .integration-example summary { cursor: pointer; font-weight: 650; }
+.integration-edit .form-stack { margin-block: .8rem .3rem; }
+.integration-code { display: block; width: 100%; max-width: 100%; margin-block: .3rem .65rem; font-family: ui-monospace, monospace; }
 .record-list li div > span, .record-list li time { display: block; color: var(--muted); font-size: .84rem; }
 .record-list .chip { flex: 0 0 auto; }
 .record-list .button { flex: 0 0 auto; }
