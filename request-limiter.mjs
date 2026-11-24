@@ -5,8 +5,7 @@ export function createRequestLimiter({ db }) {
   return async function allow(scope) {
     const limits = {
       register: [20,3600], login: [120,60], pairing: [60,60], notify: [60,60], 'webhook-check': [40,60],
-      'external-api': [360,60], 'external-submit': [30,60], 'integration-manage': [60,60], 'platform-manage': [60,60],
-      'source-pairing-start': [45,60], 'source-pairing-claim': [360,60]
+      'external-api': [360,60], 'external-submit': [30,60], 'integration-manage': [60,60], 'platform-manage': [60,60]
     };
     const scopedLimits = {
       pairing: [5,60], notify: [10,60], 'webhook-check': [12,3600],

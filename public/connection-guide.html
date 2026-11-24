@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>串接精靈指南 · LINEBOT 接線站</title>
+  <title>Webhook 串接指南 · LINEBOT 接線站</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -13,37 +13,31 @@
   </div></header>
   <main class="workspace-shell">
     <div class="loan-page">
-      <div class="page-heading"><div><h1>串接精靈指南</h1><p>讓原平台的後端建立配對，並在指定事件完成時發送 LINE 通知。</p></div></div>
-      <section class="panel" aria-labelledby="start-title">
-        <h2 id="start-title">建立配對</h2>
-        <p class="muted">在原平台後端隨機產生 32 位元組，轉成 Base64URL 字串作為 <code>verifier</code>。對字串做 SHA-256，再將結果轉成 Base64URL 作為 <code>challenge</code>。</p>
-        <p class="section-gap"><code>POST /api/v1/source-pairings</code></p>
-        <pre><code>{
-  "sourceName": "教具借用平台",
-  "eventName": "借用核准",
-  "challenge": "&lt;Base64URL 的 SHA-256 結果&gt;"
-}</code></pre>
-        <p>使用 <code>Content-Type: application/json</code>。HTTP 201 回傳 <code>pairingCode</code>、<code>deviceToken</code>、有效秒數 <code>expiresIn</code> 和輪詢間隔 <code>pollInterval</code>。在來源平台畫面顯示 <code>pairingCode</code>，把 <code>deviceToken</code> 和 <code>verifier</code> 留在後端，供下一步使用。</p>
-      </section>
-      <section class="panel section-gap" aria-labelledby="approve-title">
-        <h2 id="approve-title">授權並領取金鑰</h2>
-        <p>開發者登入接線站後，進入要串接的數位平台，在「事件串接」按「開始串接」。貼上配對碼、核對來源與事件、選收件者，再按「允許連接」。</p>
-        <p class="section-gap"><code>POST /api/v1/source-pairings/claim</code></p>
-        <pre><code>{
-  "deviceToken": "&lt;建立配對回傳的值&gt;",
-  "verifier": "&lt;原平台後端保存的值&gt;"
-}</code></pre>
-        <p>來源後端至少每 5 秒查詢一次。HTTP 202 表示等候授權。HTTP 429 時稍後再查詢。HTTP 200 回傳 <code>integrationId</code>、<code>apiKey</code> 和 <code>endpoint</code>，請把金鑰存到原平台的後端機密設定。HTTP 410 表示應重新建立配對。</p>
+      <div class="page-heading"><div><h1>Webhook 串接指南</h1><p>由數位平台的事件觸發 LINE 通知，收件者在接線站設定。</p></div></div>
+      <section class="panel" aria-labelledby="setup-title">
+        <h2 id="setup-title">建立事件 Webhook</h2>
+        <ol class="instructions">
+          <li>在「我的數位平台」選擇平台，開啟「事件串接」。</li>
+          <li>在「新增事件串接」填寫事件名稱，例如「借用核准」，再選擇已配對的收件者。</li>
+          <li>按「建立 Webhook」，複製這個事件的專屬網址和金鑰。金鑰請存到原平台的後端設定。</li>
+        </ol>
+        <p>日後可在該事件的「Webhook 設定」查看網址和請求範例。需要新金鑰時，從「管理事件」換發。</p>
       </section>
       <section class="panel section-gap" aria-labelledby="send-title">
-        <h2 id="send-title">由事件觸發通知</h2>
-        <p>在原平台的業務事件成功完成後，由後端呼叫 <code>POST /api/v1/send</code>。</p>
-        <pre><code>Authorization: Bearer &lt;從後端機密設定讀取 apiKey&gt;
+        <h2 id="send-title">由數位平台發送</h2>
+        <p>在原平台成功完成事件後，由後端或自動化流程向該事件的 Webhook 網址發送 <code>POST</code> 請求。</p>
+        <pre><code>POST /api/v1/webhooks/&lt;事件識別碼&gt;
+Authorization: Bearer &lt;這個事件的串接金鑰&gt;
 Content-Type: application/json
-Idempotency-Key: loan-approved-&lt;借用單識別碼&gt;
+Idempotency-Key: loan-approved-1042
 
 {"message":"有一筆教具借用已核准，請登入平台查看。"}</code></pre>
-        <p>同一筆事件重試時沿用相同的 <code>Idempotency-Key</code> 和訊息。接線站回傳 <code>messageId</code>，可用同一把金鑰呼叫 <code>GET /api/v1/messages/{messageId}</code> 查詢。開發者也可在接線站查看發送紀錄，並請收件者確認是否收到。</p>
+        <p>網址和金鑰取自同一個事件。把 <code>loan-approved-1042</code> 換成這筆業務事件的固定編號，重試時沿用相同編號和訊息，避免重複發送。</p>
+      </section>
+      <section class="panel section-gap" aria-labelledby="status-title">
+        <h2 id="status-title">確認通知</h2>
+        <p>在接線站的事件卡按「發送測試」，可先確認 Bot 和收件者。要驗證完整串接，請在數位平台觸發一次實際事件，再到「發送與紀錄」確認 LINE 的受理狀態。</p>
+        <p>HTTP <code>202</code> 代表通知已排入發送流程。原平台可用同一把金鑰呼叫 <code>GET /api/v1/messages/{messageId}</code> 查詢處理結果。</p>
       </section>
     </div>
   </main>

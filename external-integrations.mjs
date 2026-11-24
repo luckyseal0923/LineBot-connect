@@ -32,15 +32,12 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     return rows;
   }
 
-  async function create(accountId, input, provision) {
+  async function create(accountId, input, botId = null) {
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
     if (!name || name.length > 80 || !externalIdPattern.test(input?.recipientId || '')) return { error: 'invalid' };
 
-    const id = provision?.id || randomUUID();
-    const apiKey = provision?.apiKey || 'lbc_' + randomBytes(32).toString('base64url');
-    const botId = provision?.botId || null;
-    if (!externalIdPattern.test(id) || !integrationKeyPattern.test(apiKey) ||
-        (botId !== null && !externalIdPattern.test(botId))) return { error: 'invalid' };
+    const id = randomUUID();
+    const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
     const { rows } = await db.query(`insert into linebot_private.integrations(id,account_id,recipient_id,name,key_hash,key_tail,event_name)
       select $6,r.account_id,r.id,$3,$4,$5,$3 ${eligibleRecipients} and ($7::uuid is null or b.id=$7::uuid)
       on conflict(id) do nothing returning id`,

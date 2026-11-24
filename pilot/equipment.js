@@ -87,7 +87,7 @@ function render(next) {
   const messages = receipts.length ? `<ul class="receipt-list">${receipts.map(loan =>
     `<li class="receipt-item"><strong>${escapeHtml(loan.number)} 已收到</strong><p>${escapeHtml(loan.message)}</p></li>`
   ).join('')}</ul>` : `<p class="empty-state equipment-empty">${next.connected
-    ? '核准一筆借用單後，通知會顯示在這裡。' : '先在接線站允許連接，再核准一筆借用單。'}</p>`;
+    ? '核准一筆借用單後，通知會顯示在這裡。' : '先設定借用核准的 Webhook，再核准一筆借用單。'}</p>`;
   if (inbox.dataset.previous !== messages) {
     inbox.innerHTML = messages;
     inbox.dataset.previous = messages;

@@ -58,6 +58,11 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     }
     const alice = users.get('a'.repeat(43));
     const bob = users.get('b'.repeat(43));
+    const secondInPlatform = randomUUID();
+    const secondLineId = 'U' + 'd'.repeat(32);
+    await db.query(`insert into linebot_private.recipients
+      (id,account_id,bot_id,line_hash,encrypted_line_id,label) values($1,$2,$3,'follow-up',$4,'候補承辦人')`,
+    [secondInPlatform, alice.id, alice.botId, JSON.stringify(recipientVault.seal(alice.id, secondLineId))]);
     const secondBot = randomUUID(), secondRecipient = randomUUID();
     await db.query(`insert into linebot_private.bot_credentials(id,account_id,bot_user_id,bot_name,encrypted_secret,encrypted_access_token,enabled) values($1,$2,$3,'second','{}',$4,true)`,[secondBot,alice.id,'U'+'c'.repeat(32),JSON.stringify(tokenVault.seal(alice.id,'token'))]);
     await db.query(`insert into linebot_private.recipients(id,account_id,bot_id,line_hash,encrypted_line_id,label) values($1,$2,$3,'second',$4,'second')`,[secondRecipient,alice.id,secondBot,JSON.stringify(recipientVault.seal(alice.id,'U'+'c'.repeat(32)))]);
@@ -91,7 +96,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
       body: data === undefined ? undefined : JSON.stringify(data)
     });
     const create = (account, recipientId, name) => portal(account, adminPath, { recipientId, name });
-    const post = (apiKey, eventKey, body) => fetch(origin + '/api/v1/send', {
+    const post = (apiKey, eventKey, body, url = origin + '/api/v1/send') => fetch(url, {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json', 'Idempotency-Key': eventKey },
       body: JSON.stringify(body)
@@ -113,12 +118,19 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await create('a', bob.recipientId, '錯誤收件人')).status, 422);
     const created = await create('a', alice.recipientId, '課程報名');
     assert.equal(created.status, 201);
-    const { id, apiKey } = await created.json();
+    const { id, apiKey, webhookUrl } = await created.json();
+    assert.equal(webhookUrl, origin + '/api/v1/webhooks/' + id);
+    assert.equal((await fetch(webhookUrl)).status, 405);
+    assert.equal((await fetch(origin + '/api/v1/source-pairings', { method: 'POST' })).status, 404);
+    const guide = await (await fetch(origin + '/connection-guide')).text();
+    assert.match(guide, /Webhook 串接指南/);
+    assert.doesNotMatch(guide, /source-pairings/);
     const other = await (await create('b', bob.recipientId, '測試系統')).json();
     const listed = await (await portal('a')).json();
     assert.equal(listed.endpoint, origin + '/api/v1/send');
     assert.equal(listed.integrations.length, 1);
     assert.equal(listed.integrations[0].keyTail, apiKey.slice(-6));
+    assert.equal(listed.integrations[0].webhookUrl, webhookUrl);
     assert.equal(JSON.stringify(listed).includes(apiKey), false);
     const otherPlatform=await (await portal('a','/independent-api/platforms',{name:'教具平台'})).json();
     assert.equal((await portal('a','/independent-api/platforms/attach',{id:otherPlatform.id,botId:secondBot})).status,200);
@@ -126,7 +138,8 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const routesA=(await (await portal('a',`${adminPath}?platform=${service.id}`)).json()).integrations;
     const routesB=(await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`)).json()).integrations;
     assert.deepEqual(routesA.map(x=>x.id),[id]); assert.deepEqual(routesB.map(x=>x.id),[otherRoute.id]);
-    assert.equal((await (await portal('a',`/independent-api/recipients?platform=${service.id}`)).json()).recipients[0].id,alice.recipientId);
+    const scopedRecipients = await (await portal('a', `/independent-api/recipients?platform=${service.id}`)).json();
+    assert.deepEqual(new Set(scopedRecipients.recipients.map(item => item.id)), new Set([alice.recipientId, secondInPlatform]));
     assert.equal((await portal('a',`${adminPath}?platform=${service.id}`,{recipientId:secondRecipient,name:'不應建立'})).status,403);
     assert.equal((await portal('a',`${adminPath}/${otherRoute.id}/disable?platform=${service.id}`,{})).status,404);
     assert.equal((await portal('a',`/independent-api/recipient/disable?platform=${service.id}`,{recipientId:secondRecipient})).status,404);
@@ -137,8 +150,19 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await post(apiKey, 'order-1042', { recipientId: bob.recipientId, message: 'test' })).status, 400);
     assert.equal((await post(apiKey, 'too-large', { message: 'x'.repeat(17000) })).status, 413);
 
+    const secondEvent = await portal('a', `${adminPath}?platform=${service.id}`, {
+      recipientId: secondInPlatform, name: '候補通知'
+    });
+    assert.equal(secondEvent.status, 201);
+    const followUp = await secondEvent.json();
+    assert.notEqual(followUp.webhookUrl, webhookUrl);
     const payload = { message: '測試訊息內容' };
-    const pair = await Promise.all([post(apiKey, 'order-1042', payload), post(apiKey, 'order-1042', payload)]);
+    assert.equal((await post(apiKey, 'order-1042', payload, followUp.webhookUrl)).status, 401);
+    assert.equal((await post(otherRoute.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
+    assert.equal((await post(other.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
+    const pair = await Promise.all([
+      post(apiKey, 'order-1042', payload, webhookUrl), post(apiKey, 'order-1042', payload)
+    ]);
     assert.ok(pair.every(response => response.status === 202));
     const [first, duplicate] = await Promise.all(pair.map(response => response.json()));
     assert.equal(first.messageId, duplicate.messageId);
@@ -184,10 +208,22 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(sent.length, 2);
     const rotated = await (await portal('a', `${adminPath}/${id}/rotate`, {})).json();
     assert.notEqual(rotated.apiKey, apiKey);
+    assert.equal(rotated.webhookUrl, webhookUrl);
+    assert.equal((await post(apiKey, 'order-1042', payload, webhookUrl)).status, 401);
+    assert.equal((await post(rotated.apiKey, 'order-1042', payload, webhookUrl)).status, 200);
     assert.equal((await lookup(apiKey, first.messageId)).status, 401);
     assert.equal((await lookup(rotated.apiKey, first.messageId)).status, 200);
     assert.equal((await portal('a', `${adminPath}/${id}/revoke`, {})).status, 200);
     assert.equal((await lookup(rotated.apiKey, first.messageId)).status, 401);
+    assert.equal((await post(rotated.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
+
+    const routed = await post(followUp.apiKey, 'order-1042', payload, followUp.webhookUrl);
+    assert.equal(routed.status, 202);
+    const followUpReceipt = await routed.json();
+    assert.notEqual(followUpReceipt.messageId, first.messageId);
+    assert.equal(await integrations.runNext(), true);
+    assert.equal(JSON.parse(sent.at(-1).options.body).to, secondLineId);
+    assert.equal((await (await lookup(followUp.apiKey, followUpReceipt.messageId)).json()).status, 'accepted');
 
     await db.exec('reset role; set role linebot_reviewer');
     assert.equal((await db.query("select integration_name from linebot_private.admin_notifications where username='alice' limit 1")).rows[0].integration_name, '課程報名');

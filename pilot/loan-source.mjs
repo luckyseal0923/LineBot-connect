@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { externalIdPattern, integrationKeyPattern } from '../external-integrations.mjs';
-import { authorizeService, json, privateHeaders, readJson } from './http.mjs';
+import { eventWebhookPath } from '../external-api.mjs';
+import { json, privateHeaders, readJson } from './http.mjs';
 
-export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, inbox }) {
+export function createLoanSource({ origin, hubOrigin, hubHref, connection, inbox }) {
   const host = new URL(origin).host;
   const assets = new Map([
     ['/', [new URL('./loan.html', import.meta.url), 'text/html; charset=utf-8']],
@@ -14,7 +14,6 @@ export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, in
     ['/loan.js', [new URL('./loan.js', import.meta.url), 'text/javascript; charset=utf-8']],
     ['/styles.css', [new URL('../public/styles.css', import.meta.url), 'text/css; charset=utf-8']]
   ]);
-  let connection;
   let loan;
   let loanNumber = 0;
   let approval;
@@ -64,7 +63,7 @@ export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, in
 
   async function enqueueApproval({ id, number, item }, destination) {
     const label = item ? '（' + item.name + '）' : '';
-    const response = await hub('/api/v1/send', destination.key, {
+    const response = await hub(eventWebhookPath(destination.id), destination.key, {
       message: `測試借用單 ${number}${label}已核准，請至教具借用平台查看。`
     }, 'loan-approved-' + id);
     if (!response.ok) {
@@ -73,7 +72,6 @@ export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, in
         : '借用單已核准，通知暫時未送入接線站。請按「重試送出通知」。' };
     }
     const { messageId, status } = await response.json();
-    destination.latest = messageId;
     return { messageId, status, connectionId: destination.id };
   }
 
@@ -152,29 +150,6 @@ export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, in
   async function handler(req, res) {
     if (req.headers.host !== host) return json(res, 403, { error: '來源不正確。' });
     const { pathname } = new URL(req.url, origin);
-    if (pathname.startsWith('/service/')) {
-      if (!authorizeService(req, serviceSecret)) return json(res, 401, { error: '服務憑證無效。' });
-      if (req.method === 'GET' && pathname.startsWith('/service/latest/')) {
-        const id = pathname.slice('/service/latest/'.length);
-        return json(res, 200, { messageId: connection?.id === id ? connection.latest : null });
-      }
-      if (req.method === 'POST' && ['/service/connect', '/service/disconnect'].includes(pathname)) {
-        const data = await readJson(req);
-        if (!externalIdPattern.test(data?.id || '')) return json(res, 422, { error: '連接資料不完整。' });
-        if (pathname === '/service/disconnect') {
-          if (connection?.id === data.id) connection = undefined;
-          return json(res, 200, { connected: false });
-        }
-        if (!integrationKeyPattern.test(data.key || '')) return json(res, 422, { error: '連接資料不完整。' });
-        if (connection?.id === data.id && connection.key !== data.key) {
-          return json(res, 409, { error: '連接資料不一致。' });
-        }
-        if (connection?.id !== data.id) connection = { id: data.id, key: data.key, latest: null };
-        return json(res, 200, { connected: true });
-      }
-      return json(res, 404, { error: '找不到服務操作。' });
-    }
-
     if (pathname === '/api/borrow' || pathname.startsWith('/api/borrow/')) return borrow(req, res, pathname);
     if (pathname === '/api/loan' && req.method === 'GET') return json(res, 200, await state());
     if (req.method === 'POST' && ['/api/approve', '/api/new-loan'].includes(pathname)) {
@@ -186,7 +161,7 @@ export function createLoanSource({ origin, hubOrigin, hubHref, serviceSecret, in
       }
       const data = await readJson(req);
       if (data?.id !== loan.id) return json(res, 409, { error: '借用單已更新，請重新載入。' });
-      if (!connection) return json(res, 409, { error: '請先回接線站允許連接。' });
+      if (!connection) return json(res, 409, { error: '請先設定借用核准的 Webhook。' });
       if (loan.receipt) return json(res, 200, await state());
       if (approval) return json(res, 409, { error: '正在處理這筆借用單，請稍候。' });
       const approvedLoan = loan;

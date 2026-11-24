@@ -36,8 +36,8 @@ function render(loan) {
     title.textContent = '接線站已收到事件';
     message.textContent = '正在等待模擬 LINE 受理。';
   } else {
-    title.textContent = loan.connected ? '等待核准借用' : '等待接線站授權';
-    message.textContent = loan.connected ? '核准後，這裡會顯示測試通知。' : '請回接線站完成連接。';
+    title.textContent = loan.connected ? '等待核准借用' : '等待 Webhook 設定';
+    message.textContent = loan.connected ? '核准後，這裡會顯示測試通知。' : '請設定借用核准的 Webhook。';
   }
   if (inbox.textContent !== title.textContent + message.textContent) {
     inbox.replaceChildren(title, message);

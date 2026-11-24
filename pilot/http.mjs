@@ -1,5 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
-
 export const privateHeaders = {
   'Cache-Control': 'no-store',
   'Referrer-Policy': 'no-referrer',
@@ -26,10 +24,4 @@ export async function readJson(req) {
   } catch {
     return null;
   }
-}
-
-export function authorizeService(req, secret) {
-  const supplied = Buffer.from(req.headers.authorization || '');
-  const expected = Buffer.from('Bearer ' + secret);
-  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }

@@ -1,6 +1,8 @@
 import { externalIdPattern, integrationKeyPattern } from './external-integrations.mjs';
 
 const sendPath = '/api/v1/send';
+const webhookPrefix = '/api/v1/webhooks/';
+export const eventWebhookPath = id => webhookPrefix + id;
 const statusPrefix = '/api/v1/messages/';
 const maxBodyBytes = 16384;
 
@@ -48,7 +50,9 @@ async function readBody(req) {
 export function createExternalApi({ integrations, allow }) {
   return async function externalApi(req, res, path) {
     const messageId = path.startsWith(statusPrefix) ? path.slice(statusPrefix.length) : '';
-    const method = path === sendPath ? 'POST' : externalIdPattern.test(messageId) ? 'GET' : null;
+    const webhookId = path.startsWith(webhookPrefix) ? path.slice(webhookPrefix.length).toLowerCase() : '';
+    const isEventWebhook = externalIdPattern.test(webhookId);
+    const method = path === sendPath || isEventWebhook ? 'POST' : externalIdPattern.test(messageId) ? 'GET' : null;
     if (!method) return json(res, 404, { code: 'not_found', error: '找不到功能。' });
     if (req.method !== method) {
       return json(res, 405, { code: 'method_not_allowed', error: '請使用指定的 HTTP 方法。' }, { Allow: method });
@@ -67,7 +71,7 @@ export function createExternalApi({ integrations, allow }) {
       if (!integrationKeyPattern.test(key || '')) return unauthorized();
       if (!await allow('external-api')) return reject('rate_limited');
       const access = await integrations.authenticate(key);
-      if (!access) return unauthorized();
+      if (!access || (isEventWebhook && access.id !== webhookId)) return unauthorized();
       if (access.status !== 'active') return reject('disabled');
 
       if (method === 'GET') {

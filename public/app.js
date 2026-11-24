@@ -9,7 +9,7 @@ const accountLink = document.querySelector('#account-link');
 const guestLink = document.querySelector('#guest-link');
 const logoutButton = document.querySelector('#logout-button');
 const consoleUrl = 'https://developers.line.biz/console/';
-const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages', 'connect']);
+const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages']);
 const pages = new Set(['platforms', 'account', 'register', ...workspacePages]);
 const webhookChecks = new Map();
 const stamp = new Intl.DateTimeFormat('zh-TW', {
@@ -40,7 +40,11 @@ function dateTime(value) {
 }
 
 function route() {
-  const [page, query] = location.hash.slice(1).split('?', 2);
+  let [page, query] = location.hash.slice(1).split('?', 2);
+  if (page === 'connect') {
+    page = 'integrations';
+    history.replaceState(null, '', '#' + page + (query ? '?' + query : ''));
+  }
   return { page: pages.has(page) ? page : 'platforms', params: new URLSearchParams(query) };
 }
 
@@ -71,7 +75,7 @@ function platformName(platform) {
 }
 
 async function api(path, { data, signal, unscoped = false } = {}) {
-  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?|source-setup(?:\/.*)?)(?:\?|$)/.test(path);
+  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?)(?:\?|$)/.test(path);
   if (currentPlatform && scoped && !unscoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   const response = await fetch('/independent-api/' + path, {
     method: data === undefined ? 'GET' : 'POST',
@@ -164,7 +168,7 @@ function setLayout(state, page, user) {
   guestLink.textContent = page === 'register' ? '返回登入' : '申請帳號';
   for (const link of navigation.querySelectorAll('[data-page]')) {
     link.href = workspaceLink('#' + link.dataset.page);
-    if (link.dataset.page === (page === 'connect' ? 'integrations' : page)) link.setAttribute('aria-current', 'page');
+    if (link.dataset.page === page) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
 }
@@ -248,7 +252,6 @@ async function render({ openPlatformsIfApproved = false } = {}) {
     if (page === 'recipients') await renderRecipients(signal);
     if (page === 'messages') await renderMessages(signal);
     if (page === 'integrations') await renderIntegrations(signal);
-    if (page === 'connect') await renderSourceSetup(signal);
   }
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
@@ -1039,46 +1042,13 @@ async function renderRecipients(signal) {
   });
 }
 
-async function renderSourceSetup(signal) {
-  const back = buttonLink('返回事件串接', '#integrations', 'secondary');
-  view.innerHTML = pageHeading('串接精靈', '跟著步驟完成連接，並從原平台試送一筆。', back) +
-    '<div id="source-setup-view"><p class="page-loading" role="status">正在查詢可連接的來源…</p></div>';
-  const mount = view.querySelector('#source-setup-view');
-  try {
-    const state = await api('source-setup', { signal });
-    if (signal.aborted) return;
-    if (state.mode === 'source-pairing') {
-      const { mountGuidedConnection } = await import('/guided-connection.js');
-      if (!signal.aborted) mountGuidedConnection({
-        mount, signal, api, escapeHtml, report,
-        state, platformId: currentPlatform.id, platformName: platformName(currentPlatform),
-        messagesHref: workspaceLink('#messages'),
-        recipientsHref: workspaceLink('#recipients')
-      });
-      return;
-    }
-    if (!state.source) {
-      mount.innerHTML = `<section class="panel">${emptyState('目前沒有可選的試辦來源',
-        '在教具借用平台可體驗一次授權。', buttonLink('選擇數位平台', '#platforms'))}</section>`;
-      return;
-    }
-    const { mountSourceWizard } = await import('/source-wizard.js');
-    if (!signal.aborted) mountSourceWizard({
-      mount, state, signal, api, escapeHtml, report,
-      messagesHref: workspaceLink('#messages'),
-      overviewHref: workspaceLink('#overview'),
-      recipientsHref: workspaceLink('#recipients'),
-      confirmDisconnect: () => confirmAction('斷開來源平台', '斷開後，這個來源的通知將停止發送。', '確認斷開', signal)
-    });
-  } catch (error) {
-    if (!signal.aborted) showPageError(mount, error.status === 404 ? '此環境尚未開放串接精靈。' : error.message);
-  }
-}
-
 async function renderIntegrations(signal) {
   const platform = currentPlatform;
-  view.innerHTML = pageHeading('事件串接', '為這個平台的每種事件指定收件者及專用金鑰。',
-    `<div class="button-row" id="integration-page-actions">${buttonLink('查看發送紀錄', '#messages', 'secondary')}</div>`) +
+  view.innerHTML = pageHeading('事件串接', '每個事件有專屬的 Webhook 網址。數位平台呼叫後，接線站會通知設定的收件者。',
+    `<div class="button-row">
+      <a href="/connection-guide" class="button button-secondary" target="_blank" rel="noopener">Webhook 串接指南</a>
+      ${buttonLink('查看發送紀錄', '#messages', 'secondary')}
+    </div>`) +
     '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
   const workspace = view.querySelector('#integration-workspace');
   let initial, recipients;
@@ -1089,10 +1059,6 @@ async function renderIntegrations(signal) {
     return;
   }
   if (signal.aborted) return;
-  if (initial.guidedSetup) {
-    view.querySelector('#integration-page-actions').insertAdjacentHTML('afterbegin', buttonLink('開始串接', '#connect'));
-  }
-
   const path = 'integrations';
   const recipientOptions = selected => option('', '請選擇收件對象') + recipients.map(recipient =>
     `<option value="${escapeHtml(recipient.id)}"${recipient.id === selected ? ' selected' : ''}>${escapeHtml(recipient.label)}</option>`
@@ -1101,13 +1067,26 @@ async function renderIntegrations(signal) {
     <label>觸發事件名稱<input name="name" required maxlength="80" value="${escapeHtml(name)}" placeholder="例如 新增課程報名"></label>
     <label>收件對象<select name="recipientId" required>${recipientOptions(recipientId)}</select></label>`;
   const firstRecipient = recipients.length === 1 ? recipients[0].id : '';
-  const example = [
-    '$headers = @{',
-    '  Authorization = "Bearer $env:LINEBOT_INTEGRATION_KEY"',
-    "  'Idempotency-Key' = 'signup-1042'",
-    '}',
-    `Invoke-RestMethod -Method Post -Uri '${initial.endpoint}' -Headers $headers -ContentType 'application/json; charset=utf-8' -Body '{"message":"收到一筆新報名，請登入平台查看。"}'`
-  ].join('\n');
+  function webhookSettings(prefix, url) {
+    const requestId = prefix + '-request';
+    const example = [
+      `POST ${url}`,
+      'Authorization: Bearer <串接金鑰>',
+      'Content-Type: application/json',
+      'Idempotency-Key: event-1042',
+      '',
+      '{"message":"有一筆事件已完成，請登入平台查看。"}'
+    ].join('\n');
+    return `
+      ${copyField(prefix + '-url', 'Webhook 網址（POST）', url, '複製網址')}
+      <div class="copy-field">
+        <label for="${requestId}">Webhook 請求範例</label>
+        <textarea id="${requestId}" class="integration-code" rows="7" readonly spellcheck="false">${escapeHtml(example)}</textarea>
+        <button class="button button-secondary" type="button" data-copy="${requestId}">複製 Webhook 設定</button>
+        <p class="feedback" data-copy-status="${requestId}" role="status"></p>
+      </div>
+      <p class="muted small">金鑰填在數位平台的後端設定。將 <code>event-1042</code> 換成該筆事件的固定編號，重試時沿用相同編號和訊息。</p>`;
+  }
 
   workspace.innerHTML = `
     <section class="panel integration-secret" id="integration-secret" aria-labelledby="integration-secret-title" hidden></section>
@@ -1119,31 +1098,15 @@ async function renderIntegrations(signal) {
         </div>
         <div id="integration-list"></div>
       </section>
-      <div class="panel-stack">
-        <section class="panel" aria-labelledby="integration-create-title">
-          <h2 id="integration-create-title">新增事件串接</h2>
-          ${recipients.length ? `<form id="integration-create" class="form-stack">
-            ${fields('', firstRecipient)}
-            <button type="submit" class="button button-primary">建立並取得金鑰</button>
-          </form>` : platform.botEnabled
-            ? emptyState('先配對收件者', '完成 LINE 配對後即可建立串接。', buttonLink('前往配對', '#recipients'))
-            : emptyState('先啟用平台的 LINE Bot', '啟用並配對收件者後即可建立串接。', buttonLink('前往 Bot 設定', '#bot'))}
-        </section>
-        <section class="panel integration-connect" aria-labelledby="integration-connect-title">
-          <h2 id="integration-connect-title">串接資訊</h2>
-          <p class="muted">在外部平台設定事件發生時呼叫下方網址，並將對應金鑰保存在該平台的後端。</p>
-          ${copyField('integration-endpoint', '發送網址（POST）', initial.endpoint, '複製網址')}
-          <details class="integration-example copy-field">
-            <summary>查看 PowerShell 呼叫範例</summary>
-            <p class="muted small"><code>LINEBOT_INTEGRATION_KEY</code> 是後端環境變數。<code>Idempotency-Key</code> 請填每筆事件的固定編號，重試時沿用同一值。</p>
-            <label for="integration-example-code">範例指令</label>
-            <textarea id="integration-example-code" class="integration-code" rows="9" readonly>${escapeHtml(example)}</textarea>
-            <button class="button button-secondary" type="button" data-copy="integration-example-code">複製範例</button>
-            <p class="feedback" data-copy-status="integration-example-code" role="status"></p>
-            <p class="muted small">成功排隊後可用同一組金鑰查詢 <code>GET /api/v1/messages/{傳訊編號}</code>。</p>
-          </details>
-        </section>
-      </div>
+      <section class="panel" aria-labelledby="integration-create-title">
+        <h2 id="integration-create-title">新增事件串接</h2>
+        ${recipients.length ? `<form id="integration-create" class="form-stack">
+          ${fields('', firstRecipient)}
+          <button type="submit" class="button button-primary">建立 Webhook</button>
+        </form>` : platform.botEnabled
+          ? emptyState('先配對收件者', '完成 LINE 配對後即可建立 Webhook。', buttonLink('前往配對', '#recipients'))
+          : emptyState('先啟用平台的 LINE Bot', '啟用並配對收件者後即可建立 Webhook。', buttonLink('前往 Bot 設定', '#bot'))}
+      </section>
     </div>`;
 
   const list = workspace.querySelector('#integration-list');
@@ -1155,7 +1118,7 @@ async function renderIntegrations(signal) {
 
   function renderList() {
     if (!items.length) {
-      list.innerHTML = emptyState('尚未建立串接', '新增串接後，即可取得供數位平台呼叫的金鑰。');
+      list.innerHTML = emptyState('尚未建立串接', '選好事件名稱與收件者後，就能取得 Webhook 設定。');
       return;
     }
     list.innerHTML = items.map(item => {
@@ -1169,7 +1132,12 @@ async function renderIntegrations(signal) {
           <span>收件者 <strong>${escapeHtml(item.recipientLabel)}</strong></span>
           ${item.keyTail ? `<span>金鑰尾碼 <code>${escapeHtml(item.keyTail)}</code></span>` : ''}
         </div>
-        <div class="integration-actions">${action('test', '發送測試', status[1] !== 'success', 'secondary')}
+        <div class="integration-actions">
+          <details class="action-menu integration-webhook">
+            <summary>Webhook 設定</summary>
+            ${webhookSettings('event-' + item.id, item.webhookUrl)}
+          </details>
+          ${action('test', '發送測試', status[1] !== 'success', 'secondary')}
           <details class="action-menu integration-edit"><summary>管理事件</summary>
             ${recipients.length ? `<form class="form-stack">${fields(integrationName(item), item.recipientId)}
               <button class="button button-secondary" type="submit">儲存串接設定</button>
@@ -1183,6 +1151,7 @@ async function renderIntegrations(signal) {
         </div>
       </article>`;
     }).join('');
+    bindCopyFields(list);
   }
 
   function hideSecret() {
@@ -1190,12 +1159,16 @@ async function renderIntegrations(signal) {
     secret.hidden = true;
   }
 
-  function showSecret(key) {
-    secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">請保存串接金鑰</h2>
+  function showSecret({ apiKey, webhookUrl }) {
+    secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">Webhook 串接設定</h2>
         <button class="button button-quiet" type="button" data-hide-key>關閉</button></div>
-      <p class="muted">金鑰只會顯示這一次。請複製到數位平台的後端環境變數。</p>
-      ${copyField('integration-key', '串接金鑰', key, '複製金鑰')}`;
-    secret.querySelector('input').autocomplete = 'off';
+      <p class="muted">請先將這次顯示的金鑰存到數位平台的後端。網址和請求格式可在事件卡片重新查看。</p>
+      ${copyField('integration-key', '串接金鑰（僅顯示一次）', apiKey, '複製金鑰')}
+      <details class="action-menu integration-webhook" open>
+        <summary>網址與請求格式</summary>
+        ${webhookSettings('new-webhook', webhookUrl)}
+      </details>`;
+    secret.querySelector('#integration-key').autocomplete = 'off';
     secret.hidden = false;
     bindCopyFields(secret);
     secret.querySelector('[data-hide-key]').addEventListener('click', () => {
@@ -1221,7 +1194,7 @@ async function renderIntegrations(signal) {
     try {
       const result = await api(route, { data, signal });
       if (signal.aborted) return;
-      if (result.apiKey) showSecret(result.apiKey);
+      if (result.apiKey) showSecret(result);
       after?.();
       report(feedback, success, 'success');
       try { await refreshList(); }
@@ -1238,7 +1211,7 @@ async function renderIntegrations(signal) {
   createForm?.addEventListener('submit', event => {
     event.preventDefault();
     change(createForm.querySelector('button'), path, Object.fromEntries(new FormData(createForm)),
-      '串接已建立。', () => createForm.reset());
+      'Webhook 已建立。', () => createForm.reset());
   });
   list.addEventListener('submit', event => {
     event.preventDefault();
@@ -1287,7 +1260,6 @@ async function renderIntegrations(signal) {
     }
   });
   renderList();
-  bindCopyFields(workspace);
 }
 
 async function renderMessages(signal) {

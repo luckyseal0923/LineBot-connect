@@ -1,8 +1,10 @@
 
+import { eventWebhookPath } from './external-api.mjs';
+
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, sourceSetupPlatformId, sourceSetupForAllPlatforms = false }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -12,6 +14,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
   const botIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const webhookUrl = key => new URL(`/webhooks/line/${key}`, origin).href;
   const publicBot = bot => ({ id: bot.id, name: bot.botName, enabled: bot.enabled, webhookUrl: webhookUrl(bot.webhookKey) });
+  const withEventWebhook = item => ({ ...item, webhookUrl: new URL(eventWebhookPath(item.id), origin).href });
   const send = (res,status,body,extra={}) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}); res.end(JSON.stringify(body)); };
   const read = async req => { const parts=[]; let n=0; for await(const chunk of req){n+=chunk.length;if(n>8192) throw Error('too large');parts.push(chunk);}return JSON.parse(Buffer.concat(parts).toString('utf8')); };
   return async function api(req,res) {
@@ -124,9 +127,8 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
         if (!integrations) { send(res, 503, { error: '外部串接尚未開放。' }); return true; }
         if (req.method === 'GET' && !integrationAction) {
-          send(res, 200, { integrations: await integrations.list(user.id,await platformBot(user)), endpoint: new URL('/api/v1/send', origin).href,
-            ...(requestedPlatform && (sourceSetupForAllPlatforms || sourceSetupPlatformId === requestedPlatform)
-              ? { guidedSetup: true } : {}) });
+          const items = await integrations.list(user.id, await platformBot(user));
+          send(res, 200, { integrations: items.map(withEventWebhook), endpoint: new URL('/api/v1/send', origin).href });
           return true;
         }
         if (req.method !== 'POST') {
@@ -144,7 +146,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (!action) {
           const input=await read(req);
           if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===input.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
-          result = await integrations.create(user.id, input);
+          result = await integrations.create(user.id, input, scopedBot);
         }
         else if (scopedBot && !(await integrations.list(user.id,scopedBot)).some(item=>item.id===id)) {send(res,404,{error:'找不到此平台的串接。'});return true;}
         else if (action === 'edit') result = await integrations.edit(user.id, id, await read(req));
@@ -162,7 +164,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (result.error) {
           const [status, error] = failures[result.error];
           send(res, status, { error });
-        } else send(res, action ? 200 : 201, result);
+        } else send(res, action ? 200 : 201, result.apiKey ? withEventWebhook(result) : result);
         return true;
       }
       if(path.startsWith('/independent-api/notification') || path.startsWith('/independent-api/recipient')) {

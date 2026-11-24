@@ -11,9 +11,7 @@ import { createCredentialVault } from '../line-webhook.mjs';
 import { createNotifications } from '../notifications.mjs';
 import { createPlatformServices } from '../platform-services.mjs';
 import { createRequestLimiter } from '../request-limiter.mjs';
-import { createSourcePairing } from '../source-pairing.mjs';
 import { createLoanSource } from './loan-source.mjs';
-import { createSourceSetup } from './source-setup.mjs';
 
 const migrations = [
   '005_independent_accounts', '006_runtime_grants', '007_review_retention', '011_multiple_bots',
@@ -26,7 +24,7 @@ function listen(server, port) {
   });
 }
 
-export async function startPilot({ port = 39261, sourcePort = 39262, productionPairing = false, pairingClock = Date.now } = {}) {
+export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
   const origin = 'http://127.0.0.1:' + port;
   // A different host keeps the station's session cookie away from the source.
   const sourceOrigin = 'http://localhost:' + sourcePort;
@@ -93,9 +91,7 @@ export async function startPilot({ port = 39261, sourcePort = 39262, productionP
 
     const owner = await seedAccount('pilot_owner', '試辦開發者');
     const supported = await seedPlatform(owner, '教具借用平台', '教具通知 Bot', 'a', [['教具管理員', 'b'], ['教學備援窗口', 'c']]);
-    const other = await seedPlatform(owner, '課程報名平台', '課程通知 Bot', 'd', [['課程承辦人', 'e']]);
-    const observer = await seedAccount('pilot_observer', '另一位試辦開發者');
-    const observerPlatform = await seedPlatform(observer, '教學成果平台', '成果通知 Bot', 'f', [['成果承辦人', '9']]);
+    await seedPlatform(owner, '課程報名平台', '課程通知 Bot', 'd', [['課程承辦人', 'e']]);
     await db.exec('set role linebot_runtime');
 
     const inbox = new Map();
@@ -112,36 +108,17 @@ export async function startPilot({ port = 39261, sourcePort = 39262, productionP
     const notifications = createNotifications({
       db, key, recipientVault, tokenVault, fetchImpl: simulatedLine, includeIntegrations: true
     });
-    const source = {
-      name: '教具借用平台', event: '借用核准', platformId: supported.id, origin: sourceOrigin,
-      secret: randomBytes(32).toString('base64url')
-    };
-    const demoSession = async selection => {
-      const account = selection === 'observer' ? observer : owner;
-      const { token } = await accounts.login(account);
-      if (!token) throw new Error('Demo login failed');
-      return { token, platformId: account === observer ? observerPlatform.id : supported.id };
-    };
-    const demoSetup = createSourceSetup({
-      accounts, platforms, notifications, integrations, db, allow, origin, source, demoSession
+    const { id, apiKey } = await integrations.create(owner.id, {
+      name: '借用核准', recipientId: supported.targets[0].id
     });
-    const pairing = productionPairing && createSourcePairing({
-      accounts, platforms, notifications, integrations, db, allow, origin, key, clock: pairingClock
-    });
-    const sourceSetup = pairing ? {
-      ...pairing,
-      handle(req, res) {
-        return new URL(req.url, origin).pathname === '/independent-api/source-setup/preview'
-          ? demoSetup.handle(req, res) : pairing.handle(req, res);
-      }
-    } : demoSetup;
+    if (!apiKey) throw new Error('Demo webhook setup failed');
     loanSource = createLoanSource({
-      origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/independent-api/source-setup/preview',
-      serviceSecret: source.secret, inbox
+      origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/#integrations?platform=' + supported.id,
+      connection: { id, key: apiKey }, inbox
     });
     hub = createLinebotServer({
       accounts, bots, vault, allow, publicOrigin: origin, notifications, integrations, platforms,
-      sourceSetup, lookupBot: async () => null, eventStore: async () => {}
+      lookupBot: async () => null, eventStore: async () => {}
     });
     await listen(loanSource, sourcePort);
     await listen(hub, port);
@@ -152,7 +129,7 @@ export async function startPilot({ port = 39261, sourcePort = 39262, productionP
         .finally(() => { dispatch = undefined; });
     }, 200);
 
-    return { origin, sourceOrigin, close, supported, other, observerPlatform, inbox };
+    return { origin, sourceOrigin, close, supported, owner, inbox };
   } catch (error) {
     await close();
     throw error;
@@ -161,8 +138,10 @@ export async function startPilot({ port = 39261, sourcePort = 39262, productionP
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const pilot = await startPilot();
-  console.log('試辦入口 ' + pilot.origin + '/independent-api/source-setup/preview');
-  console.log('示範來源 ' + pilot.sourceOrigin);
+  console.log('接線站 ' + pilot.origin);
+  console.log('本機測試帳號 ' + pilot.owner.username);
+  console.log('本機測試密碼 ' + pilot.owner.password);
+  console.log('示範來源 ' + pilot.sourceOrigin + '/equipment');
   process.once('SIGINT', pilot.close);
   process.once('SIGTERM', pilot.close);
 }
