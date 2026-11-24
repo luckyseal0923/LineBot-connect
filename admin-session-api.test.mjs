@@ -26,7 +26,7 @@ test('admin HTTP session requires both factors and protects review',async()=>{
   const admin=createAdminApi({reviewDb:db,authorize:sessions.authorize,publicOrigin:origin});
   server=createAdminServer({reviewDb:db,mfa:createAdminMfa({db,vault,clock:()=>now}),allow:createAdminRateLimiter({db}),publicOrigin:origin});
   await new Promise(resolve=>server.listen(39184,'127.0.0.1',resolve));
-  assert.match(await (await fetch(origin+'/')).text(),/帳號申請審核/);
+  assert.match(await (await fetch(origin+'/')).text(),/接線站管理後台/);
   assert.equal((await fetch(origin+'/admin-api/pending')).status,401);
   const otp=await generate({secret,epoch:Math.floor(now.getTime()/1000)});
   const login=await fetch(origin+'/admin-session/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({username:'admin_test',password:pass,otp})});

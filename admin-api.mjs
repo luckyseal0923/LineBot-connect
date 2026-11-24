@@ -15,6 +15,20 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
     const result=await reviewDb.query("select username,display_name,status,created_at from linebot_private.accounts where status='pending' order by created_at limit 100");
     send(res,200,{accounts:result.rows});return true;
    }
+   if(path==='/admin-api/monitor' && req.method==='GET'){
+    const [accounts,bots,notifications,audit,summary]=await Promise.all([
+     reviewDb.query('select * from linebot_private.admin_accounts order by created_at desc limit 200'),
+     reviewDb.query('select * from linebot_private.admin_bots order by updated_at desc limit 200'),
+     reviewDb.query('select * from linebot_private.admin_notifications order by created_at desc limit 200'),
+     reviewDb.query('select * from linebot_private.admin_review_audit order by reviewed_at desc limit 100'),
+     reviewDb.query(`select (select count(*)::int from linebot_private.admin_accounts) as accounts,
+      (select count(*)::int from linebot_private.admin_accounts where status='pending') as pending,
+      (select count(*)::int from linebot_private.admin_bots where enabled) as active_bots,
+      (select count(*)::int from linebot_private.admin_notifications where created_at>=now()-interval '30 days') as notifications_30d,
+      (select count(*)::int from linebot_private.admin_notifications where created_at>=now()-interval '30 days' and status in ('failed','unknown')) as attention_30d`)
+    ]);
+    send(res,200,{accounts:accounts.rows,bots:bots.rows,notifications:notifications.rows,audit:audit.rows,summary:summary.rows[0]});return true;
+   }
    if(path==='/admin-api/review' && req.method==='POST'){
     let n=0;const chunks=[];for await(const chunk of req){n+=chunk.length;if(n>8192){send(res,413,{error:'資料過大'});return true;}chunks.push(chunk);}
     let data;try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(res,400,{error:'資料格式不正確'});return true;}
