@@ -358,7 +358,7 @@ function renderHistory(target, records, limit = records.length) {
 }
 
 function integrationStatus(item) {
-  if (!item.keyTail) return ['金鑰已撤銷', 'neutral'];
+  if (!item.keyTail) return ['Webhook 已撤銷', 'neutral'];
   if (!item.enabled) return ['已停用', 'neutral'];
   return item.targetReady ? ['啟用中', 'success'] : ['收件者或 Bot 無法使用', 'warning'];
 }
@@ -1044,16 +1044,17 @@ async function renderRecipients(signal) {
 
 async function renderIntegrations(signal) {
   const platform = currentPlatform;
-  view.innerHTML = pageHeading('事件串接', '每個事件有專屬的 Webhook 網址。數位平台呼叫後，接線站會通知設定的收件者。',
+  view.innerHTML = pageHeading('事件串接', '將事件的專屬 Webhook 網址貼到數位平台。事件發生時，接線站會通知設定的收件者。',
     `<div class="button-row">
       <a href="/connection-guide" class="button button-secondary" target="_blank" rel="noopener">Webhook 串接指南</a>
       ${buttonLink('查看發送紀錄', '#messages', 'secondary')}
     </div>`) +
     '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
   const workspace = view.querySelector('#integration-workspace');
+  const listPath = 'integrations?webhooks=1';
   let initial, recipients;
   try {
-    [initial, { recipients }] = await Promise.all([api('integrations', { signal }), api('recipients', { signal })]);
+    [initial, { recipients }] = await Promise.all([api(listPath, { signal }), api('recipients', { signal })]);
   } catch (error) {
     if (!signal.aborted) showPageError(workspace, error.message);
     return;
@@ -1068,24 +1069,9 @@ async function renderIntegrations(signal) {
     <label>收件對象<select name="recipientId" required>${recipientOptions(recipientId)}</select></label>`;
   const firstRecipient = recipients.length === 1 ? recipients[0].id : '';
   function webhookSettings(prefix, url) {
-    const requestId = prefix + '-request';
-    const example = [
-      `POST ${url}`,
-      'Authorization: Bearer <串接金鑰>',
-      'Content-Type: application/json',
-      'Idempotency-Key: event-1042',
-      '',
-      '{"message":"有一筆事件已完成，請登入平台查看。"}'
-    ].join('\n');
     return `
       ${copyField(prefix + '-url', 'Webhook 網址（POST）', url, '複製網址')}
-      <div class="copy-field">
-        <label for="${requestId}">Webhook 請求範例</label>
-        <textarea id="${requestId}" class="integration-code" rows="7" readonly spellcheck="false">${escapeHtml(example)}</textarea>
-        <button class="button button-secondary" type="button" data-copy="${requestId}">複製 Webhook 設定</button>
-        <p class="feedback" data-copy-status="${requestId}" role="status"></p>
-      </div>
-      <p class="muted small">金鑰填在數位平台的後端設定。將 <code>event-1042</code> 換成該筆事件的固定編號，重試時沿用相同編號和訊息。</p>`;
+      <p class="muted small">貼到數位平台的 Webhook 欄位並選擇 POST。持有完整網址即可觸發這條通知。</p>`;
   }
 
   workspace.innerHTML = `
@@ -1118,7 +1104,7 @@ async function renderIntegrations(signal) {
 
   function renderList() {
     if (!items.length) {
-      list.innerHTML = emptyState('尚未建立串接', '選好事件名稱與收件者後，就能取得 Webhook 設定。');
+      list.innerHTML = emptyState('尚未建立串接', '選好事件名稱與收件者後，就能複製 Webhook 網址。');
       return;
     }
     list.innerHTML = items.map(item => {
@@ -1130,13 +1116,12 @@ async function renderIntegrations(signal) {
         ${!item.eventName ? '<p class="muted small">沿用舊名稱，請確認觸發事件。</p>' : ''}
         <div class="integration-meta small">
           <span>收件者 <strong>${escapeHtml(item.recipientLabel)}</strong></span>
-          ${item.keyTail ? `<span>金鑰尾碼 <code>${escapeHtml(item.keyTail)}</code></span>` : ''}
         </div>
         <div class="integration-actions">
-          <details class="action-menu integration-webhook">
+          ${item.privateWebhookUrl ? `<details class="action-menu integration-webhook">
             <summary>Webhook 設定</summary>
-            ${webhookSettings('event-' + item.id, item.webhookUrl)}
-          </details>
+            ${webhookSettings('event-' + item.id, item.privateWebhookUrl)}
+          </details>` : ''}
           ${action('test', '發送測試', status[1] !== 'success', 'secondary')}
           <details class="action-menu integration-edit"><summary>管理事件</summary>
             ${recipients.length ? `<form class="form-stack">${fields(integrationName(item), item.recipientId)}
@@ -1144,8 +1129,8 @@ async function renderIntegrations(signal) {
             </form>` : ''}
             <div class="button-row">
               ${item.enabled ? action('disable', '停用串接') : action('enable', '啟用串接', !item.targetReady || !item.keyTail)}
-              ${action('rotate', item.keyTail ? '換發金鑰' : '產生新金鑰')}
-              ${item.keyTail ? action('revoke', '撤銷金鑰', false, 'danger-outline') : ''}
+              ${action('rotate', item.keyTail ? '換發網址' : '產生新網址')}
+              ${item.keyTail ? action('revoke', '撤銷 Webhook', false, 'danger-outline') : ''}
             </div>
           </details>
         </div>
@@ -1159,14 +1144,14 @@ async function renderIntegrations(signal) {
     secret.hidden = true;
   }
 
-  function showSecret({ apiKey, webhookUrl }) {
+  function showWebhook({ apiKey, webhookUrl, privateWebhookUrl }) {
     secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">Webhook 串接設定</h2>
         <button class="button button-quiet" type="button" data-hide-key>關閉</button></div>
-      <p class="muted">請先將這次顯示的金鑰存到數位平台的後端。網址和請求格式可在事件卡片重新查看。</p>
-      ${copyField('integration-key', '串接金鑰（僅顯示一次）', apiKey, '複製金鑰')}
-      <details class="action-menu integration-webhook" open>
-        <summary>網址與請求格式</summary>
-        ${webhookSettings('new-webhook', webhookUrl)}
+      ${webhookSettings('new-webhook', privateWebhookUrl)}
+      <details class="action-menu integration-webhook">
+        <summary>標頭驗證（選用）</summary>
+        ${copyField('header-webhook-url', '標頭驗證網址（POST）', webhookUrl, '複製網址')}
+        ${copyField('integration-key', '串接金鑰（僅顯示一次）', apiKey, '複製金鑰')}
       </details>`;
     secret.querySelector('#integration-key').autocomplete = 'off';
     secret.hidden = false;
@@ -1179,7 +1164,7 @@ async function renderIntegrations(signal) {
   }
 
   async function refreshList() {
-    const updated = await api(path, { signal });
+    const updated = await api(listPath, { signal });
     if (!signal.aborted) {
       items = updated.integrations;
       renderList();
@@ -1194,7 +1179,7 @@ async function renderIntegrations(signal) {
     try {
       const result = await api(route, { data, signal });
       if (signal.aborted) return;
-      if (result.apiKey) showSecret(result);
+      if (result.privateWebhookUrl) showWebhook(result);
       after?.();
       report(feedback, success, 'success');
       try { await refreshList(); }
@@ -1228,8 +1213,8 @@ async function renderIntegrations(signal) {
     const confirmation = {
       test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
-      rotate: [item.keyTail ? '換發金鑰' : '產生新金鑰', '儲存新的金鑰後，請將它填回外部平台。', '確認換發', 'primary'],
-      revoke: ['撤銷金鑰', '撤銷後，外部平台將無法再用舊金鑰呼叫此串接。', '確認撤銷', 'danger']
+      rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發會讓舊網址與舊金鑰失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
+      revoke: ['撤銷 Webhook', '撤銷會讓這個事件的網址與金鑰失效。', '確認撤銷', 'danger']
     };
     if (confirmation[action]) {
       const [title, description, label, style] = confirmation[action];
@@ -1238,7 +1223,7 @@ async function renderIntegrations(signal) {
     const success = {
       test: '測試通知已送出處理，請查看發送紀錄並向收件人確認。',
       disable: '串接已停用。', enable: '串接已啟用。',
-      rotate: '新金鑰已產生。', revoke: '金鑰已撤銷。'
+      rotate: '新網址已產生。', revoke: 'Webhook 已撤銷。'
     };
     if (action === 'test' && !testKeys.has(item.id)) testKeys.set(item.id, 'test-' + crypto.randomUUID());
     const after = action === 'test' ? () => testKeys.delete(item.id) : action === 'revoke' ? hideSecret : undefined;

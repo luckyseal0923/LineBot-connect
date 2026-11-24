@@ -19,25 +19,27 @@
         <ol class="instructions">
           <li>在「我的數位平台」選擇平台，開啟「事件串接」。</li>
           <li>在「新增事件串接」填寫事件名稱，例如「借用核准」，再選擇已配對的收件者。</li>
-          <li>按「建立 Webhook」，複製這個事件的專屬網址和金鑰。金鑰請存到原平台的後端設定。</li>
+          <li>按「建立 Webhook」，複製專屬網址，貼到數位平台對應事件的 Webhook 欄位。</li>
         </ol>
-        <p>日後可在該事件的「Webhook 設定」查看網址和請求範例。需要新金鑰時，從「管理事件」換發。</p>
+        <p>日後可在該事件的「Webhook 設定」再次複製網址。完整網址具備發送權限，請保存在數位平台的設定。若要停用舊網址，可在「管理事件」換發或撤銷。</p>
       </section>
       <section class="panel section-gap" aria-labelledby="send-title">
         <h2 id="send-title">由數位平台發送</h2>
-        <p>在原平台成功完成事件後，由後端或自動化流程向該事件的 Webhook 網址發送 <code>POST</code> 請求。</p>
-        <pre><code>POST /api/v1/webhooks/&lt;事件識別碼&gt;
-Authorization: Bearer &lt;這個事件的串接金鑰&gt;
-Content-Type: application/json
-Idempotency-Key: loan-approved-1042
-
-{"message":"有一筆教具借用已核准，請登入平台查看。"}</code></pre>
-        <p>網址和金鑰取自同一個事件。把 <code>loan-approved-1042</code> 換成這筆業務事件的固定編號，重試時沿用相同編號和訊息，避免重複發送。</p>
+        <p>將數位平台的發送方式設為 <code>POST</code>。只填網址時，接線站會用事件名稱產生通知文字，例如「借用核准」已觸發，請至數位平台查看。</p>
+        <details class="help-block">
+          <summary>自訂訊息與避免重複發送（選用）</summary>
+          <p>數位平台若能發送 JSON，可使用 <code>message</code> 自訂通知文字。填入 <code>eventId</code> 作為每筆事件的固定編號，重試時使用相同編號和訊息。</p>
+          <pre><code>{
+  "eventId": "loan-approved-1042",
+  "message": "有一筆教具借用已核准，請登入平台查看。"
+}</code></pre>
+          <p>省略事件編號時，每次呼叫都會被視為一筆新通知。</p>
+        </details>
       </section>
       <section class="panel section-gap" aria-labelledby="status-title">
         <h2 id="status-title">確認通知</h2>
         <p>在接線站的事件卡按「發送測試」，可先確認 Bot 和收件者。要驗證完整串接，請在數位平台觸發一次實際事件，再到「發送與紀錄」確認 LINE 的受理狀態。</p>
-        <p>HTTP <code>202</code> 代表通知已排入發送流程。原平台可用同一把金鑰呼叫 <code>GET /api/v1/messages/{messageId}</code> 查詢處理結果。</p>
+        <p>HTTP <code>202</code> 代表通知已排入發送流程。請在接線站的「發送與紀錄」查看 LINE 受理狀態。</p>
       </section>
     </div>
   </main>

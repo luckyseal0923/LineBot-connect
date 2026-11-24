@@ -108,13 +108,13 @@ export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
     const notifications = createNotifications({
       db, key, recipientVault, tokenVault, fetchImpl: simulatedLine, includeIntegrations: true
     });
-    const { id, apiKey } = await integrations.create(owner.id, {
+    const { id, apiKey, webhookToken } = await integrations.create(owner.id, {
       name: '借用核准', recipientId: supported.targets[0].id
     });
     if (!apiKey) throw new Error('Demo webhook setup failed');
     loanSource = createLoanSource({
       origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/#integrations?platform=' + supported.id,
-      connection: { id, key: apiKey }, inbox
+      connection: { id, key: apiKey, webhookToken }, inbox
     });
     hub = createLinebotServer({
       accounts, bots, vault, allow, publicOrigin: origin, notifications, integrations, platforms,

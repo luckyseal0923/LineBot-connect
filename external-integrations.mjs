@@ -1,8 +1,9 @@
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createLineTextSender } from './line-client.mjs';
 
 export const externalIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const integrationKeyPattern = /^lbc_[A-Za-z0-9_-]{43}$/;
+export const webhookTokenPattern = /^wh_[A-Za-z0-9_-]{43}$/;
 const idempotencyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const retryDelays = [15, 60];
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -16,20 +17,24 @@ export async function hasExternalIntegrationSchema(db) {
 
 export function createExternalIntegrations({ db, key, messageVault, recipientVault, tokenVault, allow, fetchImpl = fetch }) {
   const sendText = createLineTextSender({ fetchImpl });
+  // Regenerate a send-only URL from the current key hash so rotation invalidates both credentials.
+  const tokenFor = (id, keyHash) => 'wh_' + createHmac('sha256', key)
+    .update(`integration-webhook:v1:${id}:${keyHash}`).digest('base64url');
   const eligibleRecipients = `from linebot_private.recipients r
     join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
     join linebot_private.accounts a on a.id=r.account_id
     where r.id=$2 and r.account_id=$1 and r.active and b.enabled and a.status='active'`;
 
-  async function list(accountId, botId = null) {
-    const { rows } = await db.query(`select i.id, i.name, i.enabled, i.key_tail as "keyTail",
+  async function list(accountId, botId = null, includeWebhook = false) {
+    const { rows } = await db.query(`select i.id, i.name, i.enabled, i.key_tail as "keyTail", case when $3 then i.key_hash end as "keyHash",
       i.recipient_id as "recipientId", b.id as "botId", b.bot_name as "botName", i.event_name as "eventName", r.label as "recipientLabel",
       (r.active and b.enabled) as "targetReady", i.created_at as "createdAt"
       from linebot_private.integrations i
       join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
       join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
-      where i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId,botId]);
-    return rows;
+      where i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId, botId, includeWebhook]);
+    return rows.map(({ keyHash, ...item }) => keyHash
+      ? { ...item, webhookToken: tokenFor(item.id, keyHash) } : item);
   }
 
   async function create(accountId, input, botId = null) {
@@ -38,11 +43,12 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
 
     const id = randomUUID();
     const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
+    const keyHash = digest(apiKey);
     const { rows } = await db.query(`insert into linebot_private.integrations(id,account_id,recipient_id,name,key_hash,key_tail,event_name)
       select $6,r.account_id,r.id,$3,$4,$5,$3 ${eligibleRecipients} and ($7::uuid is null or b.id=$7::uuid)
       on conflict(id) do nothing returning id`,
-    [accountId, input.recipientId, name, digest(apiKey), apiKey.slice(-6), id, botId]);
-    return rows.length ? { id: rows[0].id, apiKey } : { error: 'target_unavailable' };
+    [accountId, input.recipientId, name, keyHash, apiKey.slice(-6), id, botId]);
+    return rows.length ? { id, apiKey, webhookToken: tokenFor(id, keyHash) } : { error: 'target_unavailable' };
   }
 
   async function edit(accountId, id, input) {
@@ -59,9 +65,11 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   async function manage(accountId, id, action) {
     if (action === 'rotate') {
       const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
-      const result = await db.query(`update linebot_private.integrations set key_hash=$3,key_tail=$4,revision=revision+1
-        where id=$1 and account_id=$2 returning id`, [id, accountId, digest(apiKey), apiKey.slice(-6)]);
-      return result.rowCount ? { id, apiKey } : { error: 'unavailable' };
+      const keyHash = digest(apiKey);
+      const { rows } = await db.query(`update linebot_private.integrations set key_hash=$3,key_tail=$4,revision=revision+1
+        where id=$1 and account_id=$2 returning id`, [id, accountId, keyHash, apiKey.slice(-6)]);
+      const webhookId = rows[0]?.id;
+      return webhookId ? { id: webhookId, apiKey, webhookToken: tokenFor(webhookId, keyHash) } : { error: 'unavailable' };
     }
     if (action === 'revoke') {
       const result = await db.query(`update linebot_private.integrations
@@ -87,6 +95,17 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
       from linebot_private.integrations i join linebot_private.accounts a on a.id=i.account_id
       where i.key_hash=$1`, [keyHash]);
     return rows[0] ? { ...rows[0], keyHash } : null;
+  }
+
+  async function authenticateWebhook(id, token) {
+    if (!externalIdPattern.test(id) || !webhookTokenPattern.test(token)) return null;
+    const { rows } = await db.query(`select i.id,i.account_id as "accountId",i.enabled,i.key_hash as "keyHash",a.status,
+      coalesce(i.event_name,i.name) as "eventName"
+      from linebot_private.integrations i join linebot_private.accounts a on a.id=i.account_id
+      where i.id=$1 and i.key_hash is not null`, [id]);
+    const access = rows[0];
+    if (!access || !timingSafeEqual(Buffer.from(token), Buffer.from(tokenFor(access.id, access.keyHash)))) return null;
+    return access;
   }
 
   async function readSubmission(access, { requestHash = null, messageId = null }) {
@@ -231,5 +250,5 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     return true;
   }
 
-  return { list, create, edit, manage, authenticate, enqueue, status, testSend, runNext };
+  return { list, create, edit, manage, authenticate, authenticateWebhook, enqueue, status, testSend, runNext };
 }

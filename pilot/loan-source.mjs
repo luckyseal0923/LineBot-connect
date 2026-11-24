@@ -29,12 +29,12 @@ export function createLoanSource({ origin, hubOrigin, hubHref, connection, inbox
   }
   newLoan();
 
-  async function hub(path, key, data, eventKey) {
+  async function hub(path, key, data) {
     return fetch(new URL(path, hubOrigin), {
       method: data ? 'POST' : 'GET',
       headers: {
-        Authorization: 'Bearer ' + key,
-        ...(data && { 'Content-Type': 'application/json', 'Idempotency-Key': eventKey })
+        ...(key && { Authorization: 'Bearer ' + key }),
+        ...(data && { 'Content-Type': 'application/json' })
       },
       body: data && JSON.stringify(data),
       redirect: 'error',
@@ -63,9 +63,10 @@ export function createLoanSource({ origin, hubOrigin, hubHref, connection, inbox
 
   async function enqueueApproval({ id, number, item }, destination) {
     const label = item ? '（' + item.name + '）' : '';
-    const response = await hub(eventWebhookPath(destination.id), destination.key, {
+    const response = await hub(eventWebhookPath(destination.id, destination.webhookToken), null, {
+      eventId: 'loan-approved-' + id,
       message: `測試借用單 ${number}${label}已核准，請至教具借用平台查看。`
-    }, 'loan-approved-' + id);
+    });
     if (!response.ok) {
       return { error: response.status === 401 || response.status === 403
         ? '接線站的連接已失效。請回接線站重新連接。'

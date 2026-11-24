@@ -101,6 +101,10 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
       headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json', 'Idempotency-Key': eventKey },
       body: JSON.stringify(body)
     });
+    const postPrivate = (url, data) => fetch(url, {
+      method: 'POST',
+      ...(data === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+    });
     const lookup = (apiKey, messageId) => fetch(origin + '/api/v1/messages/' + messageId, {
       headers: { Authorization: 'Bearer ' + apiKey }
     });
@@ -118,8 +122,13 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await create('a', bob.recipientId, '錯誤收件人')).status, 422);
     const created = await create('a', alice.recipientId, '課程報名');
     assert.equal(created.status, 201);
-    const { id, apiKey, webhookUrl } = await created.json();
+    const { id, apiKey, webhookUrl, privateWebhookUrl } = await created.json();
     assert.equal(webhookUrl, origin + '/api/v1/webhooks/' + id);
+    assert.equal(privateWebhookUrl.slice(0, webhookUrl.length), webhookUrl);
+    assert.match(privateWebhookUrl, /\/wh_[A-Za-z0-9_-]{43}$/);
+    assert.ok(!privateWebhookUrl.includes(apiKey));
+    assert.equal((await fetch(privateWebhookUrl)).status, 405);
+    assert.equal((await postPrivate(webhookUrl)).status, 401);
     assert.equal((await fetch(webhookUrl)).status, 405);
     assert.equal((await fetch(origin + '/api/v1/source-pairings', { method: 'POST' })).status, 404);
     const guide = await (await fetch(origin + '/connection-guide')).text();
@@ -132,6 +141,14 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(listed.integrations[0].keyTail, apiKey.slice(-6));
     assert.equal(listed.integrations[0].webhookUrl, webhookUrl);
     assert.equal(JSON.stringify(listed).includes(apiKey), false);
+    assert.equal(listed.integrations[0].privateWebhookUrl, undefined);
+    const scopedWebhook = `${adminPath}?webhooks=1&platform=${service.id}`;
+    const scopedList = await (await portal('a', scopedWebhook)).json();
+    assert.equal(scopedList.integrations[0].privateWebhookUrl, privateWebhookUrl);
+    assert.equal(scopedList.integrations[0].webhookToken, undefined);
+    assert.equal(scopedList.integrations[0].keyHash, undefined);
+    assert.equal((await portal('x', scopedWebhook)).status, 401);
+    assert.ok(!(await (await portal('b', scopedWebhook)).text()).includes(privateWebhookUrl));
     const otherPlatform=await (await portal('a','/independent-api/platforms',{name:'教具平台'})).json();
     assert.equal((await portal('a','/independent-api/platforms/attach',{id:otherPlatform.id,botId:secondBot})).status,200);
     const otherRoute=await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`,{recipientId:secondRecipient,name:'借用'})).json();
@@ -156,12 +173,17 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(secondEvent.status, 201);
     const followUp = await secondEvent.json();
     assert.notEqual(followUp.webhookUrl, webhookUrl);
+    const token = privateWebhookUrl.split('/').at(-1);
+    assert.equal((await postPrivate(followUp.webhookUrl + '/' + token)).status, 401);
+    assert.equal((await postPrivate(otherRoute.webhookUrl + '/' + token)).status, 401);
+    assert.equal((await postPrivate(other.webhookUrl + '/' + token)).status, 401);
     const payload = { message: '測試訊息內容' };
     assert.equal((await post(apiKey, 'order-1042', payload, followUp.webhookUrl)).status, 401);
     assert.equal((await post(otherRoute.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
     assert.equal((await post(other.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
     const pair = await Promise.all([
-      post(apiKey, 'order-1042', payload, webhookUrl), post(apiKey, 'order-1042', payload)
+      postPrivate(privateWebhookUrl, { ...payload, eventId: 'order-1042', source: 'loan-form' }),
+      post(apiKey, 'order-1042', payload)
     ]);
     assert.ok(pair.every(response => response.status === 202));
     const [first, duplicate] = await Promise.all(pair.map(response => response.json()));
@@ -196,6 +218,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const queued = await (await post(apiKey, 'order-1043', payload)).json();
     assert.equal((await portal('a', `${adminPath}/${id}/disable`, {})).status, 200);
     assert.equal((await post(apiKey, 'order-1044', payload)).status, 403);
+    assert.equal((await postPrivate(privateWebhookUrl)).status, 403);
     assert.equal((await portal('a', `${adminPath}/${id}/enable`, {})).status, 200);
     assert.equal(await integrations.runNext(), true);
     assert.equal((await (await lookup(apiKey, queued.messageId)).json()).status, 'cancelled');
@@ -209,6 +232,9 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const rotated = await (await portal('a', `${adminPath}/${id}/rotate`, {})).json();
     assert.notEqual(rotated.apiKey, apiKey);
     assert.equal(rotated.webhookUrl, webhookUrl);
+    assert.notEqual(rotated.privateWebhookUrl, privateWebhookUrl);
+    assert.equal((await postPrivate(privateWebhookUrl)).status, 401);
+    assert.equal((await postPrivate(rotated.privateWebhookUrl, { ...payload, eventId: 'order-1042' })).status, 200);
     assert.equal((await post(apiKey, 'order-1042', payload, webhookUrl)).status, 401);
     assert.equal((await post(rotated.apiKey, 'order-1042', payload, webhookUrl)).status, 200);
     assert.equal((await lookup(apiKey, first.messageId)).status, 401);
@@ -216,13 +242,16 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await portal('a', `${adminPath}/${id}/revoke`, {})).status, 200);
     assert.equal((await lookup(rotated.apiKey, first.messageId)).status, 401);
     assert.equal((await post(rotated.apiKey, 'order-1042', payload, webhookUrl)).status, 401);
+    assert.equal((await postPrivate(rotated.privateWebhookUrl)).status, 401);
 
-    const routed = await post(followUp.apiKey, 'order-1042', payload, followUp.webhookUrl);
+    const routed = await postPrivate(followUp.privateWebhookUrl);
     assert.equal(routed.status, 202);
     const followUpReceipt = await routed.json();
     assert.notEqual(followUpReceipt.messageId, first.messageId);
     assert.equal(await integrations.runNext(), true);
-    assert.equal(JSON.parse(sent.at(-1).options.body).to, secondLineId);
+    const delivered = JSON.parse(sent.at(-1).options.body);
+    assert.equal(delivered.to, secondLineId);
+    assert.equal(delivered.messages[0].text, '「候補通知」已觸發，請至數位平台查看。');
     assert.equal((await (await lookup(followUp.apiKey, followUpReceipt.messageId)).json()).status, 'accepted');
 
     await db.exec('reset role; set role linebot_reviewer');

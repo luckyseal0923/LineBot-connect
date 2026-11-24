@@ -560,8 +560,6 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 }
 .integration-webhook .button { justify-self: start; }
 .integration-edit .form-stack { max-width: 30rem; margin: .5rem 0 .25rem; }
-.integration-code { display: block; width: 100%; max-width: 100%; margin-block: .3rem .6rem; font-family: ui-monospace, monospace; }
-.integration-webhook code, .integration-meta code { overflow-wrap: anywhere; }
 .detail-block {
   display: grid;
   gap: .55rem;

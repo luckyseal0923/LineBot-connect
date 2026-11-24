@@ -14,7 +14,11 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
   const botIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const webhookUrl = key => new URL(`/webhooks/line/${key}`, origin).href;
   const publicBot = bot => ({ id: bot.id, name: bot.botName, enabled: bot.enabled, webhookUrl: webhookUrl(bot.webhookKey) });
-  const withEventWebhook = item => ({ ...item, webhookUrl: new URL(eventWebhookPath(item.id), origin).href });
+  const withEventWebhook = ({ webhookToken, ...item }) => ({
+    ...item,
+    webhookUrl: new URL(eventWebhookPath(item.id), origin).href,
+    ...(webhookToken && { privateWebhookUrl: new URL(eventWebhookPath(item.id, webhookToken), origin).href })
+  });
   const send = (res,status,body,extra={}) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}); res.end(JSON.stringify(body)); };
   const read = async req => { const parts=[]; let n=0; for await(const chunk of req){n+=chunk.length;if(n>8192) throw Error('too large');parts.push(chunk);}return JSON.parse(Buffer.concat(parts).toString('utf8')); };
   return async function api(req,res) {
@@ -127,7 +131,9 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (user.status !== 'active') { send(res, 403, { error: '帳號尚未核准。' }); return true; }
         if (!integrations) { send(res, 503, { error: '外部串接尚未開放。' }); return true; }
         if (req.method === 'GET' && !integrationAction) {
-          const items = await integrations.list(user.id, await platformBot(user));
+          const scopedBot = await platformBot(user);
+          const includeWebhook = Boolean(scopedBot) && requestUrl.searchParams.get('webhooks') === '1';
+          const items = await integrations.list(user.id, scopedBot, includeWebhook);
           send(res, 200, { integrations: items.map(withEventWebhook), endpoint: new URL('/api/v1/send', origin).href });
           return true;
         }
