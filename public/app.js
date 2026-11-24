@@ -1047,6 +1047,16 @@ async function renderSourceSetup(signal) {
   try {
     const state = await api('source-setup', { signal });
     if (signal.aborted) return;
+    if (state.mode === 'source-pairing') {
+      const { mountGuidedConnection } = await import('/guided-connection.js');
+      if (!signal.aborted) mountGuidedConnection({
+        mount, signal, api, escapeHtml, report,
+        state, platformId: currentPlatform.id, platformName: platformName(currentPlatform),
+        messagesHref: workspaceLink('#messages'),
+        recipientsHref: workspaceLink('#recipients')
+      });
+      return;
+    }
     if (!state.source) {
       mount.innerHTML = `<section class="panel">${emptyState('目前沒有可選的試辦來源',
         '在教具借用平台可體驗一次授權。', buttonLink('選擇數位平台', '#platforms'))}</section>`;

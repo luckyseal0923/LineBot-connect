@@ -11,6 +11,7 @@ import { createCredentialVault } from '../line-webhook.mjs';
 import { createNotifications } from '../notifications.mjs';
 import { createPlatformServices } from '../platform-services.mjs';
 import { createRequestLimiter } from '../request-limiter.mjs';
+import { createSourcePairing } from '../source-pairing.mjs';
 import { createLoanSource } from './loan-source.mjs';
 import { createSourceSetup } from './source-setup.mjs';
 
@@ -25,7 +26,7 @@ function listen(server, port) {
   });
 }
 
-export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
+export async function startPilot({ port = 39261, sourcePort = 39262, productionPairing = false, pairingClock = Date.now } = {}) {
   const origin = 'http://127.0.0.1:' + port;
   // A different host keeps the station's session cookie away from the source.
   const sourceOrigin = 'http://localhost:' + sourcePort;
@@ -121,9 +122,19 @@ export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
       if (!token) throw new Error('Demo login failed');
       return { token, platformId: account === observer ? observerPlatform.id : supported.id };
     };
-    const sourceSetup = createSourceSetup({
+    const demoSetup = createSourceSetup({
       accounts, platforms, notifications, integrations, db, allow, origin, source, demoSession
     });
+    const pairing = productionPairing && createSourcePairing({
+      accounts, platforms, notifications, integrations, db, allow, origin, key, clock: pairingClock
+    });
+    const sourceSetup = pairing ? {
+      ...pairing,
+      handle(req, res) {
+        return new URL(req.url, origin).pathname === '/independent-api/source-setup/preview'
+          ? demoSetup.handle(req, res) : pairing.handle(req, res);
+      }
+    } : demoSetup;
     loanSource = createLoanSource({
       origin: sourceOrigin, hubOrigin: origin, hubHref: origin + '/independent-api/source-setup/preview',
       serviceSecret: source.secret, inbox

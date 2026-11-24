@@ -12,6 +12,7 @@ import { createNotifications } from './notifications.mjs';
 import { createLineQuotaPoller } from './line-quota.mjs';
 import { createExternalIntegrations, hasExternalIntegrationSchema } from './external-integrations.mjs';
 import { createPlatformServices } from './platform-services.mjs';
+import { createSourcePairing } from './source-pairing.mjs';
 
 const { LINEBOT_DATABASE_URL, LINEBOT_ENCRYPTION_KEY, PUBLIC_ORIGIN }=process.env;
 if(!LINEBOT_DATABASE_URL || !/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ENCRYPTION_KEY || '') || !PUBLIC_ORIGIN) throw Error('LineBOT configuration is incomplete');
@@ -37,7 +38,8 @@ const integrations=integrationReady ? createExternalIntegrations({
 }) : undefined;
 const notifications=createNotifications({db,key,recipientVault,tokenVault,includeIntegrations:integrationReady});
 const pollLineQuota=createLineQuotaPoller({db,tokenVault});
-const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow,lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck(),integrations,platforms});
+const sourceSetup=integrations && createSourcePairing({origin:PUBLIC_ORIGIN,key,accounts,platforms,notifications,integrations,db,allow});
+const server=createLinebotServer({accounts,bots,vault,eventStore:events,allow,lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck(),integrations,platforms,sourceSetup});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('LineBOT service ready'));
 const cleanup=setInterval(()=>db.query('select linebot_private.purge_expired_events()').catch(()=>console.error('Event cleanup failed')),60*60*1000);
 cleanup.unref();

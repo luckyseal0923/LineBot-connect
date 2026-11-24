@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>串接精靈指南 · LINEBOT 接線站</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header"><div class="header-inner">
+    <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">L</span><strong>LineBOT 接線站</strong></a>
+    <a href="/#platforms" class="button button-secondary">回接線站</a>
+  </div></header>
+  <main class="workspace-shell">
+    <div class="loan-page">
+      <div class="page-heading"><div><h1>串接精靈指南</h1><p>讓原平台的後端建立配對，並在指定事件完成時發送 LINE 通知。</p></div></div>
+      <section class="panel" aria-labelledby="start-title">
+        <h2 id="start-title">建立配對</h2>
+        <p class="muted">在原平台後端隨機產生 32 位元組，轉成 Base64URL 字串作為 <code>verifier</code>。對字串做 SHA-256，再將結果轉成 Base64URL 作為 <code>challenge</code>。</p>
+        <p class="section-gap"><code>POST /api/v1/source-pairings</code></p>
+        <pre><code>{
+  "sourceName": "教具借用平台",
+  "eventName": "借用核准",
+  "challenge": "&lt;Base64URL 的 SHA-256 結果&gt;"
+}</code></pre>
+        <p>使用 <code>Content-Type: application/json</code>。HTTP 201 回傳 <code>pairingCode</code>、<code>deviceToken</code>、有效秒數 <code>expiresIn</code> 和輪詢間隔 <code>pollInterval</code>。在來源平台畫面顯示 <code>pairingCode</code>，把 <code>deviceToken</code> 和 <code>verifier</code> 留在後端，供下一步使用。</p>
+      </section>
+      <section class="panel section-gap" aria-labelledby="approve-title">
+        <h2 id="approve-title">授權並領取金鑰</h2>
+        <p>開發者登入接線站後，進入要串接的數位平台，在「事件串接」按「開始串接」。貼上配對碼、核對來源與事件、選收件者，再按「允許連接」。</p>
+        <p class="section-gap"><code>POST /api/v1/source-pairings/claim</code></p>
+        <pre><code>{
+  "deviceToken": "&lt;建立配對回傳的值&gt;",
+  "verifier": "&lt;原平台後端保存的值&gt;"
+}</code></pre>
+        <p>來源後端至少每 5 秒查詢一次。HTTP 202 表示等候授權。HTTP 429 時稍後再查詢。HTTP 200 回傳 <code>integrationId</code>、<code>apiKey</code> 和 <code>endpoint</code>，請把金鑰存到原平台的後端機密設定。HTTP 410 表示應重新建立配對。</p>
+      </section>
+      <section class="panel section-gap" aria-labelledby="send-title">
+        <h2 id="send-title">由事件觸發通知</h2>
+        <p>在原平台的業務事件成功完成後，由後端呼叫 <code>POST /api/v1/send</code>。</p>
+        <pre><code>Authorization: Bearer &lt;從後端機密設定讀取 apiKey&gt;
+Content-Type: application/json
+Idempotency-Key: loan-approved-&lt;借用單識別碼&gt;
+
+{"message":"有一筆教具借用已核准，請登入平台查看。"}</code></pre>
+        <p>同一筆事件重試時沿用相同的 <code>Idempotency-Key</code> 和訊息。接線站回傳 <code>messageId</code>，可用同一把金鑰呼叫 <code>GET /api/v1/messages/{messageId}</code> 查詢。開發者也可在接線站查看發送紀錄，並請收件者確認是否收到。</p>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer">LineBOT Connect</footer>
+</body>
+</html>
