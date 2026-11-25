@@ -1287,7 +1287,8 @@ async function renderRecipients(signal) {
       preview.innerHTML = `<h3 tabindex="-1">交給收件者的配對碼</h3>
         ${result.chatQr ? `<div id="pair-chat-qr">
           <img class="invite-qr" width="230" height="230" alt="開啟 ${escapeHtml(platform.botName)} 聊天室並帶入配對碼的 QR Code" src="${escapeHtml(result.chatQr)}">
-          <p>用手機掃碼後，在「${escapeHtml(platform.botName)}」聊天室按「送出」，再點 Bot 回覆的「填寫資料」。</p>
+          ${result.chatUrl ? copyField('pair-chat-link', '配對連結', result.chatUrl, '複製配對連結') : ''}
+          <p>請收件者掃碼或點開配對連結，在「${escapeHtml(platform.botName)}」聊天室直接按「送出」，再點 Bot 回覆的「填寫資料」。</p>
         </div>` : '<p class="muted small">暫時無法取得聊天室 QR Code，請複製下方配對碼，在 Bot 的一對一聊天室送出。</p>'}
         <p class="muted small">每組限一人配對，也可以手動輸入以下數字。</p>
         ${copyField('pair-code', '6 位數配對碼', result.message, '複製配對碼')}
@@ -1296,7 +1297,7 @@ async function renderRecipients(signal) {
       bindCopyFields(preview);
       preview.querySelector('#check-pairing').addEventListener('click', () => loadList());
       const countdown = preview.querySelector('#pair-countdown');
-      const copyButton = preview.querySelector('[data-copy]');
+      const copyButton = preview.querySelector('[data-copy="pair-code"]');
       function updateExpiry() {
         const seconds = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
         const minutes = Math.floor(seconds / 60);

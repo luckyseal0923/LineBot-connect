@@ -41,6 +41,7 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
         if (info?.basicId && info.userId === target.bot_user_id) {
           const chatUrl = `https://line.me/R/oaMessage/${encodeURIComponent(info.basicId)}/?${encodeURIComponent(pairingMessage(code))}`;
           invitation.chatQr = await QRCode.toDataURL(chatUrl,{width:260,margin:4});
+          invitation.chatUrl = chatUrl;
         }
         return invitation;
       }
