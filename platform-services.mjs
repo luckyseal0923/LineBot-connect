@@ -48,7 +48,7 @@ export function createPlatformServices({db}) {
     async getLineSetup(accountId, id) {
       if (!uuid.test(id || '')) return { error: 'invalid' };
       const { rows } = await db.query(
-        `select (line_setup - 'recipientLiffId') as "lineSetup" from linebot_private.platform_services where account_id=$1 and id=$2`,
+        `select (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup" from linebot_private.platform_services where account_id=$1 and id=$2`,
         [accountId, id]
       );
       return rows[0] || { error: 'unavailable' };
@@ -59,9 +59,9 @@ export function createPlatformServices({db}) {
       if (!lineSetup) return { error: 'invalid' };
       if (Object.keys(input).length && !lineSetup.providerName) return { error: 'provider_required' };
       const { rows } = await db.query(
-        `update linebot_private.platform_services set line_setup=$3::jsonb || (case when line_setup ? 'recipientLiffId' then jsonb_build_object('recipientLiffId',line_setup->'recipientLiffId') else '{}'::jsonb end)
-         where account_id=$1 and id=$2 returning (line_setup - 'recipientLiffId') as "lineSetup"`,
-        [accountId, id, JSON.stringify(lineSetup)]
+        `update linebot_private.platform_services set line_setup=(line_setup - $4::text[]) || $3::jsonb
+         where account_id=$1 and id=$2 returning (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup"`,
+        [accountId, id, JSON.stringify(lineSetup), Object.keys(lineSetupLimits)]
       );
       return rows[0] || { error: 'unavailable' };
     },

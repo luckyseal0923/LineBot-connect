@@ -30,6 +30,15 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
       if (!saved.rowCount) return null;
       row.liff = liff;
     }
+    const { rows: [profile] } = await db.query(
+      `select line_setup->'loginProfile' as saved, line_setup->>'providerName' as provider,
+        line_setup->>'contactEmail' as email, line_setup->>'region' as region
+       from linebot_private.platform_services where id=$1 and account_id=$2`, [id,owner]);
+    if (!profile) return null;
+    const loginProfile = profile.saved || {
+      channel: '收件者登記', app: '收件者登記', description: '登入後填寫姓名，加入此平台的通知收件名單。',
+      provider: profile.provider || '', email: profile.email || '', region: profile.region || '台灣'
+    };
     const url = row.liff ? 'https://liff.line.me/' + row.liff + '?invite=' + invitation(id,row) : '';
     let basicId = '';
     try {
@@ -39,7 +48,7 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
     } catch {
       // The invitation remains usable when LINE cannot supply the public ID.
     }
-    return { basicId, endpoint: new URL('/join/' + id, publicOrigin).href, liffId: row.liff || '', url,
+    return { loginProfile, profileSaved: Boolean(profile.saved), basicId, endpoint: new URL('/join/' + id, publicOrigin).href, liffId: row.liff || '', url,
       qr: url ? await QRCode.toDataURL(url, { width: 260, margin: 4 }) : '' };
   }
   async function lineJson(url, token) {
@@ -90,5 +99,22 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
       where linebot_private.recipients.account_id=excluded.account_id`,[id,row.bot_id,row.liff,hash,JSON.stringify(recipientVault.seal(row.account_id,profile.userId)),label]);
     return result.rowCount ? send(200,{ok:true}) : send(409,{error:'平台設定已更新，請重新掃碼。'});
   }
-  return {settings,handle};
+  async function saveLoginProfile(owner,id,input) {
+    if (!validPlatform.test(id || '')) return null;
+    const limits = { channel:20, app:20, description:500, provider:100, email:254, region:80 };
+    const profile = {};
+    for (const [field,limit] of Object.entries(limits)) {
+      const value = typeof input?.[field] === 'string' ? input[field].trim() : '';
+      if (!value || value.length > limit || /[\x00-\x1f]/.test(value)) return {error:'請確認必填欄位及字數。'};
+      profile[field] = value;
+    }
+    if (!/^[^\s@<>*]+@[^\s@<>*]+\.[^\s@<>*]+$/.test(profile.email)) return {error:'請填寫完整的聯絡信箱。'};
+    const result = await db.query(`update linebot_private.platform_services p set
+      line_setup=jsonb_set(line_setup,'{loginProfile}',$3::jsonb)
+      where p.id=$1 and p.account_id=$2 and exists
+      (select 1 from linebot_private.bot_credentials b where b.id=p.bot_id and b.account_id=$2 and b.enabled)`,
+      [id,owner,JSON.stringify(profile)]);
+    return result.rowCount ? {loginProfile:profile} : null;
+  }
+  return {settings,handle,saveLoginProfile};
 }

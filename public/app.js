@@ -999,14 +999,20 @@ async function renderRecipientInvite(panel, signal) {
   try { config = await api('recipient/invite',{signal}); }
   catch(error) { if(!signal.aborted) showPageError(panel,error.message); return; }
   if(signal.aborted) return;
+  const pageUrl=new URL(platformLink('recipients?setup=login-ai',currentPlatform),location.href);
+  const skillUrl=new URL('/line-login-setup.md',location.origin);
+  const loginPrompt=`請依照 ${skillUrl.href} 的 LINE Login 開設 Skill，使用 Computer Use 開啟 ${pageUrl.href}。先讀取這個平台已儲存的 AI 開設資料並核對 Bot，再協助設定 LINE Login 與 LIFF、接上本平台的收件者登記頁。登入與身分驗證由我操作。如已有可用邀請 QR Code，請沿用。`;
   function draw() {
-    panel.innerHTML = `${config.basicId
+    const idBox=panel.closest('#recipients-body').querySelector('#invite-bot-id');
+    idBox.innerHTML = config.basicId
       ? copyField('recipient-bot-id','LINE 官方帳號 ID（加入好友用）',config.basicId,'複製 ID')
-      : '<p class="muted">目前無法取得 LINE 官方帳號 ID。</p>'}
-      ${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
+      : '<p class="muted">目前無法取得 LINE 官方帳號 ID。</p>';
+    bindCopyFields(idBox);
+    panel.innerHTML = `      ${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
       <img class="invite-qr" width="230" height="230" alt="收件者登記 QR Code" src="${escapeHtml(config.qr)}">
       ${copyField('invite-url','收件者邀請連結',config.url,'複製連結')}` : '<p>首次使用請先設定此 Bot 的 LINE 登入，完成後即可分享 QR Code。</p>'}
-      <details class="help-block" ${config.qr ? '' : 'open'}><summary>設定 LINE 登入</summary>
+      <details class="help-block"><summary>手動設定 LINE 登入頁</summary>
+        <p>熟悉 LINE Developers 的開發者可依下列步驟建立登入頁。</p>
         <ol class="instructions">
           <li>在 <a href="${consoleUrl}" target="_blank" rel="noopener">LINE Developers</a> 選擇此 Bot 所屬的 Provider，建立或開啟 LINE Login 頻道，並在 Basic settings 將 Linked LINE Official Account 設為此 Bot。</li>
           <li>新增 LIFF 網頁，選擇 Full、勾選 profile、啟用加入好友選項，並填入下方的 Endpoint URL。</li>
@@ -1015,8 +1021,44 @@ async function renderRecipientInvite(panel, signal) {
         ${copyField('join-endpoint','Endpoint URL',config.endpoint,'複製網址')}
         <form class="form-stack"><label>LIFF ID<input name="liff" value="${escapeHtml(config.liffId)}" required maxlength="80" placeholder="例如 1234567890-AbcdEfgh"></label>
           <button class="button button-secondary">儲存並顯示 QR Code</button><p class="feedback" role="status"></p></form>
+      </details>
+      <details class="help-block" id="login-assist" ${new URLSearchParams(location.hash.split('?')[1]).get('setup')==='login-ai'?'open':''}>
+        <summary>AI 協助設定 LINE 登入頁</summary>
+        <p>先確認開設資料，再將指令貼給支援瀏覽器操作的 AI。登入 LINE 時由你接手。</p>
+        <form class="form-stack" data-login-profile>
+          <div class="line-setup-fields">
+          ${[['provider','Bot 所屬管理單位（Provider）',100],['region','服務地區',80],['channel','LINE Login 頻道名稱',20],['app','登入頁名稱（LIFF）',20],['email','聯絡電子郵件',254],['description','收件者登入用途',500]].map(([name,label,max])=>
+            `<label>${label}<input name="${name}" type="${name==='email'?'email':'text'}" required maxlength="${max}" value="${escapeHtml(config.loginProfile[name])}"></label>`).join('')}
+          </div>
+          <button type="submit" class="button button-secondary">儲存 AI 開設資料</button>
+          <p class="feedback" role="status"></p>
+        </form>
+        <div data-login-handoff ${config.profileSaved?'':'hidden'}>
+          ${copyField('login-ai-prompt','給 AI 的設定指令',loginPrompt,'複製指令')}
+          <a class="text-link" href="/line-login-setup.md" target="_blank" rel="noopener">查看 LINE Login Skill</a>
+        </div>
       </details>`;
     bindCopyFields(panel);
+    const profileForm=panel.querySelector('[data-login-profile]');
+    const handoff=panel.querySelector('[data-login-handoff]');
+    profileForm.addEventListener('input',()=>{handoff.hidden=true;});
+    profileForm.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const button=profileForm.querySelector('button');
+      if(button.disabled) return;
+      button.disabled=true;
+      const fields=Object.fromEntries(new FormData(profileForm));
+      try {
+        const result=await api('recipient/login-profile',{data:fields,signal});
+        if(signal.aborted) return;
+        config.loginProfile=result.loginProfile;
+        config.profileSaved=true;
+        const unchanged=Object.entries(fields).every(([name,value])=>profileForm.elements.namedItem(name).value===value);
+        handoff.hidden=!unchanged;
+        report(profileForm.querySelector('.feedback'),unchanged?'已儲存，可複製指令給 AI。':'已儲存先前內容，請再儲存剛才的修改。','success');
+      } catch(error) { if(!signal.aborted) report(profileForm.querySelector('.feedback'),error.message,'danger'); }
+      finally {button.disabled=false;}
+    });
     const form=panel.querySelector('form');
     form.addEventListener('submit', async event=>{
       event.preventDefault();
@@ -1051,18 +1093,11 @@ async function renderRecipients(signal) {
     return;
   }
   if (signal.aborted) return;
-  body.innerHTML = `<div class="workspace-columns">
-    <section class="panel" aria-labelledby="invite-title"><h2 id="invite-title">邀請收件者</h2>
-      <div id="recipient-invite" class="spaced" aria-live="polite">載入邀請設定中…</div>
-    </section>
-    <section class="panel" aria-labelledby="paired-title">
-      <div class="section-heading"><h2 id="paired-title">收件名單</h2>
-        <button id="refresh-recipients" class="button button-quiet" type="button">重新查詢</button>
-      </div>
-      <p id="recipient-feedback" class="feedback" role="status"></p>
-      <div id="recipients-list"></div>
-    </section>
-    <details class="panel"><summary>使用一次性配對文字</summary>
+  body.innerHTML = `<section aria-labelledby="invite-title">
+    <h2 id="invite-title">邀請收件者</h2>
+    <div id="invite-bot-id" class="spaced"></div>
+    <div class="bot-setup-paths spaced">
+      <section class="panel"><h3>使用一次性配對文字</h3>
       <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送配對文字。</p>
       <form id="pair-form" class="form-stack">
         <label>收件對象名稱<input name="label" required maxlength="80" placeholder="例如 課程承辦人"></label>
@@ -1070,7 +1105,21 @@ async function renderRecipients(signal) {
         <p id="pair-result" class="feedback" role="status"></p>
       </form>
       <div id="pair-preview" class="detail-block" hidden></div>
-    </details>
+      </section>
+      <section class="panel"><h3>製作 LINE 登入頁</h3>
+        <p class="muted">讓收件者掃碼登入 LINE，自行填寫名字加入名單。</p>
+        <div id="recipient-invite" class="spaced">載入邀請設定中…</div>
+      </section>
+    </div>
+  </section>
+  <div class="spaced">
+    <section class="panel" aria-labelledby="paired-title">
+      <div class="section-heading"><h2 id="paired-title">收件名單</h2>
+        <button id="refresh-recipients" class="button button-quiet" type="button">重新查詢</button>
+      </div>
+      <p id="recipient-feedback" class="feedback" role="status"></p>
+      <div id="recipients-list"></div>
+    </section>
   </div>`;
 
   renderRecipientInvite(body.querySelector('#recipient-invite'), signal);
@@ -1083,7 +1132,7 @@ async function renderRecipients(signal) {
 
   function drawList(items) {
     if (!items.length) {
-      list.innerHTML = emptyState('尚無收件對象', '對方掃碼登記後，按「重新查詢」即可查看。');
+      list.innerHTML = emptyState('尚無收件對象', '對方傳送配對文字或掃碼完成登記後，按「重新查詢」即可查看。');
       return;
     }
     list.innerHTML = `<ul class="record-list">

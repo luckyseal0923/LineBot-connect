@@ -15,6 +15,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  for (const [path,type] of [['/recipient-join.js','text/javascript'],['/recipient-join.css','text/css']]) files.set(path,[path.slice(1),type+'; charset=utf-8']);
  files.set('/connection-guide',['connection-guide.html','text/html; charset=utf-8']);
  files.set('/line-setup-options.js',['line-setup-options.js','text/javascript; charset=utf-8']);
+ files.set('/line-login-setup.md', ['line-login-setup.md', 'text/plain; charset=utf-8']);
  files.set('/line-bot-setup.md', ['line-bot-setup.md', 'text/plain; charset=utf-8']);
  const headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
  return createServer(async(req,res)=>{

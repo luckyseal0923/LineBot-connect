@@ -199,6 +199,12 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user))});return true;}
         if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id,await platformBot(user))});return true;}
+        if(path==='/independent-api/recipient/login-profile' && req.method==='POST'){
+          if(!recipientJoin){send(res,503,{error:'此環境尚未提供 LINE 登入設定。'});return true;}
+          const result=await recipientJoin.saveLoginProfile(user.id,requestedPlatform,await read(req));
+          send(res,result?(result.error?400:200):404,result||{error:'找不到可操作的平台。'});
+          return true;
+        }
         if(path==='/independent-api/recipient/invite' && ['POST','GET'].includes(req.method)){
           if(!recipientJoin){send(res,503,{error:'此環境尚未提供 QR Code 登記。'});return true;}
           const config=await recipientJoin.settings(user.id,requestedPlatform,req.method==='POST'?await read(req):undefined);
