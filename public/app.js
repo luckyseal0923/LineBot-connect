@@ -1128,11 +1128,10 @@ async function renderRecipients(signal) {
     <h2 id="invite-title">邀請收件者</h2>
     <div id="invite-bot-id" class="spaced"></div>
     <div class="bot-setup-paths spaced">
-      <section class="panel"><h3>使用一次性配對文字</h3>
-      <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送配對文字。</p>
+      <section class="panel"><h3>使用一次性配對碼</h3>
+      <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送 6 位數配對碼，再點「填寫資料」完成登記。</p>
       <form id="pair-form" class="form-stack">
-        ${recipientFields()}
-        <button class="button button-primary" type="submit">產生配對文字</button>
+        <button class="button button-primary" type="submit">產生配對碼</button>
         <p id="pair-result" class="feedback" role="status"></p>
       </form>
       <div id="pair-preview" class="detail-block" hidden></div>
@@ -1196,7 +1195,7 @@ async function renderRecipients(signal) {
 
   function drawList(items) {
     if (!items.length) {
-      list.innerHTML = emptyState('尚無收件對象', '對方傳送配對文字或掃碼完成登記後，按「重新查詢」即可查看。');
+      list.innerHTML = emptyState('尚無收件對象', '對方透過配對碼或掃碼填完資料後，按「重新查詢」即可查看。');
       return;
     }
     list.innerHTML = `<div class="table-wrap"><table class="data-table" aria-label="平台收件名單">
@@ -1276,20 +1275,18 @@ async function renderRecipients(signal) {
     const submit = form.querySelector('button');
     if (submit.disabled) return;
     const resultText = body.querySelector('#pair-result');
-    const profile = Object.fromEntries(new FormData(form));
-    const label = profile.label.trim();
     submit.disabled = true;
-    report(resultText, '正在產生配對文字…');
+    report(resultText, '正在產生配對碼…');
     try {
-      const result = await api('recipient/pair', { data: { ...profile, botId: platform.botId, label }, signal });
+      const result = await api('recipient/pair', { data: { botId: platform.botId, selfRegistration: true }, signal });
       if (signal.aborted || !form.isConnected) return;
       const expiresAt = Date.parse(result.expiresAt);
       const expiry = Number.isFinite(expiresAt) ? expiresAt : Date.now() + (result.expiresMinutes || 10) * 60_000;
       clearInterval(expiryTimer);
       preview.hidden = false;
-      preview.innerHTML = `<h3 tabindex="-1">交給「${escapeHtml(label)}」的配對文字</h3>
-        <p class="muted small">請對方將這段文字傳給「${escapeHtml(platform.botName)}」。每組限用一次。</p>
-        ${copyField('pair-code', '配對文字', result.message, '複製配對文字')}
+      preview.innerHTML = `<h3 tabindex="-1">交給收件者的配對碼</h3>
+        <p class="muted small">請對方將這 6 位數字傳給「${escapeHtml(platform.botName)}」。此碼限一人配對。</p>
+        ${copyField('pair-code', '6 位數配對碼', result.message, '複製配對碼')}
         <p class="expiry-note">到期時間 ${dateTime(expiry)} <span id="pair-countdown"></span></p>
         <button class="button button-secondary" type="button" id="check-pairing">查詢配對結果</button>`;
       bindCopyFields(preview);
@@ -1306,7 +1303,7 @@ async function renderRecipients(signal) {
       expiryTimer = setInterval(updateExpiry, 1000);
       updateExpiry();
       preview.querySelector('h3').focus();
-      report(resultText, '配對文字已產生。', 'success');
+      report(resultText, '配對碼已產生。', 'success');
     } catch (error) {
       report(resultText, error.message, 'danger');
     } finally {

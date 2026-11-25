@@ -231,7 +231,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           const data=await read(req), scopedBot=await platformBot(user);
           if(scopedBot && data.botId!==scopedBot){send(res,403,{error:'Bot 不屬於此平台。'});return true;}
           const result=await notifications.createPairing(user.id,data.botId,data.label,data);
-          send(res,result?200:400,result||{error:'請選擇自己的啟用中 Bot 並填寫名稱。'});return true;
+          send(res,result?200:400,result||{error:'無法產生配對碼，請確認此平台的 Bot 已啟用。'});return true;
         }
         if(path==='/independent-api/recipient/disable'&&req.method==='POST'){
           const data=await read(req), scopedBot=await platformBot(user);

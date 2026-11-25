@@ -1,3 +1,4 @@
+import { createPairingRegistration } from './pairing-registration.mjs';
 import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createLineTextSender } from './line-client.mjs';
@@ -7,15 +8,24 @@ const digest=s=>createHash('sha256').update(s).digest('hex');
 export function recipientHash(key, bot, userId) {
   return createHmac('sha256',key).update(`recipient:v1:${bot}:${userId}`).digest('hex');
 }
-export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=fetch,includeIntegrations=false}) {
+export function createNotifications({db,recipientVault,tokenVault,key,allow,publicOrigin,fetchImpl=fetch,includeIntegrations=false}) {
  if(!db?.query||!recipientVault?.open||!tokenVault?.open||!Buffer.isBuffer(key)||key.length!==32)throw Error('Missing notification dependencies');
+ const registration=allow && publicOrigin ? createPairingRegistration({db,key,allow,publicOrigin,recipientVault,tokenVault,fetchImpl}) : null;
  const sendText=createLineTextSender({fetchImpl});
  async function pair(account,bot,events){
   if(!uuid.test(bot||''))return;
   for(const event of events){
    const user=event?.source?.userId;
    if(event?.type==='unfollow' && event.source?.type==='user' && /^U[0-9a-f]{32}$/.test(user||'') && Number.isFinite(event.timestamp)){
+    if (registration) await db.query(`update linebot_private.pairing_codes set completed_at=now(),claimed_line_id=null
+      where account_id=$1 and bot_id=$2 and claimed_line_hash=$3 and completed_at is null and consumed_at<=to_timestamp($4::double precision/1000)`,
+      [account,bot,recipientHash(key,bot,user),event.timestamp]);
     await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where account_id=$1 and bot_id=$2 and line_hash=$3 and created_at<=to_timestamp($4::double precision/1000)",[account,bot,recipientHash(key,bot,user),event.timestamp]);continue;
+   }
+   if (registration && event?.type==='message' && event.source?.type==='user' && event.message?.type==='text' &&
+       /^U[0-9a-f]{32}$/.test(user || '') && /^\d{6}$/.test((event.message.text || '').trim())) {
+     await registration.claim(account,bot,user,recipientHash(key,bot,user),(event.message.text || '').trim(),event.replyToken);
+     continue;
    }
    const code=event?.type==='message'&&event.source?.type==='user'&&event.message?.type==='text'&&/^綁定 ([0-9a-f]{32})$/.exec(event.message.text||'');
    if(!code||!/^U[0-9a-f]{32}$/.test(user||''))continue;
@@ -29,6 +39,7 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
   }
  }
  async function createPairing(account,bot,label,input={}){
+  if (input.selfRegistration === true) return registration && uuid.test(bot) ? registration.issue(account,bot) : null;
   const details=readRecipientDetails(input);
   if(!uuid.test(bot||'')||!details||!recipientName(label))return null;
   const code=randomBytes(16).toString('hex');
@@ -70,5 +81,5 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
   await db.query('update linebot_private.notifications set status=$1,line_status=$2,completed_at=now() where id=$3 and account_id=$4',[status,code,requestId,account]);
   return {status};
  }
- return {pair,createPairing,list,editRecipient,disable,history,send};
+ return {registration,pair,createPairing,list,editRecipient,disable,history,send};
 }

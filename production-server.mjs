@@ -36,7 +36,7 @@ const integrationReady=await hasExternalIntegrationSchema(db);
 const integrations=integrationReady ? createExternalIntegrations({
  db,key,recipientVault,tokenVault,allow,messageVault:createCredentialVault(key,{context:'integration-message',maxBytes:8000})
 }) : undefined;
-const notifications=createNotifications({db,key,recipientVault,tokenVault,includeIntegrations:integrationReady});
+const notifications=createNotifications({db,key,recipientVault,tokenVault,allow,publicOrigin:PUBLIC_ORIGIN,includeIntegrations:integrationReady});
 const pollLineQuota=createLineQuotaPoller({db,tokenVault});
 const recipientJoin=createRecipientJoin({db,key,recipientVault,tokenVault,publicOrigin:PUBLIC_ORIGIN,allow});
 const server=createLinebotServer({recipientJoin,accounts,bots,vault,eventStore:events,allow,lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck(),integrations,platforms});
@@ -47,7 +47,7 @@ const notificationCleanup=setInterval(async()=>{try{
  await db.query("delete from linebot_private.pairing_codes where id in (select id from linebot_private.pairing_codes where expires_at<now()-interval '1 day' limit 500)");
  await db.query("delete from linebot_private.notifications where id in (select id from linebot_private.notifications where created_at<now()-interval '30 days' limit 500)");
  await db.query(`delete from linebot_private.request_limits
-  where split_part(scope,':',1) in ('notify','pairing','recipient-join','external-integration','external-account','integration-manage','platform-manage')
+  where split_part(scope,':',1) in ('notify','pairing','pair-user','pair-bot','recipient-join','external-integration','external-account','integration-manage','platform-manage')
   and window_start<now()-interval '1 day'`);
  }catch{console.error('Notification cleanup failed');}},60*60*1000);
 notificationCleanup.unref();
