@@ -13,6 +13,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  const root=fileURLToPath(new URL('./public/',import.meta.url));
  const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/styles.css',['styles.css','text/css; charset=utf-8']]]);
  files.set('/connection-guide',['connection-guide.html','text/html; charset=utf-8']);
+ files.set('/line-setup-options.js',['line-setup-options.js','text/javascript; charset=utf-8']);
  const headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
  return createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;

@@ -471,6 +471,7 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .line-setup-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: .85rem 1rem;
 }
 .line-setup-purpose { grid-column: 1 / -1; }

@@ -76,7 +76,8 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         const data=await read(req);
         if (lineSetupRequest) {
           const result = await platforms.saveLineSetup(user.id, requestedPlatform, data);
-          if (result.error === 'invalid') send(res, 400, { error: '請確認開設資料的格式與字數。' });
+          if (result.error === 'provider_required') send(res, 400, { error: '請填寫機器人管理單位（Provider）。' });
+          else if (result.error === 'invalid') send(res, 400, { error: '請確認開設資料的格式與字數。' });
           else if (result.error) send(res, 404, { error: '找不到可操作的數位平台。' });
           else send(res, 200, result);
           return true;

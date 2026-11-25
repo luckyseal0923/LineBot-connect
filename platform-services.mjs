@@ -57,6 +57,7 @@ export function createPlatformServices({db}) {
       if (!uuid.test(id || '')) return { error: 'invalid' };
       const lineSetup = cleanLineSetup(input);
       if (!lineSetup) return { error: 'invalid' };
+      if (Object.keys(input).length && !lineSetup.providerName) return { error: 'provider_required' };
       const { rows } = await db.query(
         'update linebot_private.platform_services set line_setup=$3::jsonb where account_id=$1 and id=$2 returning line_setup as "lineSetup"',
         [accountId, id, JSON.stringify(lineSetup)]

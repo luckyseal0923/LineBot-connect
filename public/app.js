@@ -816,34 +816,63 @@ function renderTestStep(bot) {
     </section>`;
 }
 
+function lineSetupOptions(choices, selected, placeholder = '') {
+  const options = placeholder ? [option('', placeholder)] : [];
+  for (const label of choices) {
+    options.push(`<option value="${escapeHtml(label)}"${label === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`);
+  }
+  if (selected && !choices.includes(selected)) {
+    options.push(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}（原填寫）</option>`);
+  }
+  return options.join('');
+}
+
 async function renderLineSetup(signal) {
   const endpoint = 'platforms/line-setup';
-  const fields = [
-    ['accountName', 'LINE 官方帳號名稱', 80],
-    ['organization', '公司或事業者名稱', 120],
-    ['region', '公司所在國家或地區', 80],
-    ['contactEmail', '業務聯絡電子郵件', 254, 'email'],
-    ['industry', '業種（主類別）', 80],
-    ['subIndustry', '業種（子類別）', 80],
-    ['providerName', '服務提供者名稱（Provider）', 100]
-  ];
   view.innerHTML = pageHeading('LINE 開設資料', '先填好這個平台的官方帳號資料，之後可讓 AI 代填 LINE 申請表。',
     buttonLink('返回 Bot 設定', '#bot', 'secondary')) +
     '<section class="panel line-setup-panel" id="line-setup-panel"><p class="page-loading" role="status">正在載入開設資料…</p></section>';
   const panel = view.querySelector('#line-setup-panel');
-  let details;
+  let details, catalog;
   try {
-    ({ lineSetup: details } = await api(endpoint, { signal }));
+    [{ lineSetup: details }, catalog] = await Promise.all([
+      api(endpoint, { signal }),
+      import('/line-setup-options.js')
+    ]);
   } catch (error) {
     if (!signal.aborted) showPageError(panel, error.message);
     return;
   }
   if (signal.aborted) return;
+  const { lineSetupRegions, lineSetupIndustries } = catalog;
+  const region = details.region || '台灣';
   panel.innerHTML = `<form id="line-setup-form" class="form-stack">
     <div class="line-setup-fields">
-      ${fields.map(([name, label, limit, type = 'text']) => `<label>${label}
-        <input type="${type}" name="${name}" maxlength="${limit}" value="${escapeHtml(details[name])}">
-      </label>`).join('')}
+      <label>LINE 機器人名稱
+        <input name="accountName" maxlength="80" value="${escapeHtml(details.accountName)}" aria-describedby="line-account-name-help">
+        <small class="muted" id="line-account-name-help">好友在 LINE 好友名單和聊天室看到的名稱。</small>
+      </label>
+      <label>公司或事業者名稱
+        <input name="organization" maxlength="120" value="${escapeHtml(details.organization)}">
+      </label>
+      <label>國家或地區
+        <select name="region" required>${lineSetupOptions(lineSetupRegions, region)}</select>
+      </label>
+      <label>可聯絡的電子郵件
+        <input type="email" name="contactEmail" maxlength="254" value="${escapeHtml(details.contactEmail)}" aria-describedby="line-contact-email-help">
+        <small class="muted" id="line-contact-email-help">請填你可以收信的信箱。</small>
+      </label>
+      <label>產業類別
+        <select name="industry" aria-describedby="line-industry-help">${lineSetupOptions([...lineSetupIndustries.keys()], details.industry, '請選擇產業類別')}</select>
+        <small class="muted" id="line-industry-help">選項依 LINE 台灣開設表單整理。</small>
+      </label>
+      <label>產業細分類
+        <select name="subIndustry"></select>
+      </label>
+      <label><span>機器人管理單位（Provider）<span class="muted small"> 必填</span></span>
+        <input name="providerName" maxlength="100" value="${escapeHtml(details.providerName)}" required aria-describedby="line-provider-help">
+        <small class="muted" id="line-provider-help">管理這個機器人的個人或組織。</small>
+      </label>
       <label class="line-setup-purpose">使用目的
         <textarea name="purpose" rows="3" maxlength="240">${escapeHtml(details.purpose)}</textarea>
       </label>
@@ -854,6 +883,18 @@ async function renderLineSetup(signal) {
   const form = panel.querySelector('form');
   const button = form.querySelector('button');
   const feedback = form.querySelector('.feedback');
+  const { industry, subIndustry } = form.elements;
+
+  function renderSubIndustries(selected = '') {
+    const choices = lineSetupIndustries.get(industry.value) || [];
+    const placeholder = industry.value ? '請選擇產業細分類' : '請先選擇產業類別';
+    subIndustry.innerHTML = lineSetupOptions(choices, selected, placeholder);
+    subIndustry.disabled = !choices.length && !selected;
+  }
+
+  renderSubIndustries(details.subIndustry);
+  industry.addEventListener('change', () => renderSubIndustries());
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (button.disabled) return;
@@ -862,7 +903,7 @@ async function renderLineSetup(signal) {
     try {
       const { lineSetup } = await api(endpoint, { data: Object.fromEntries(new FormData(form)), signal });
       if (signal.aborted) return;
-      for (const field of form.querySelectorAll('input, textarea')) field.value = lineSetup[field.name] || '';
+      for (const field of form.querySelectorAll('input, select, textarea')) field.value = lineSetup[field.name] || '';
       report(feedback, '已儲存開設資料。', 'success');
     } catch (error) {
       if (!signal.aborted) report(feedback, error.message, 'danger');
