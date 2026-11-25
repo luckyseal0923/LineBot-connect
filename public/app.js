@@ -1316,13 +1316,16 @@ async function renderRecipients(signal) {
 }
 
 async function renderIntegrations(signal) {
-  view.innerHTML = pageHeading('事件串接', '建立事件、指定收件者，再將專屬 Webhook 網址貼到數位平台。',
-    `<div class="button-row">
-      <a href="/connection-guide" class="button button-secondary" target="_blank" rel="noopener">Webhook 串接指南</a>
-      ${buttonLink('查看發送紀錄', '#messages', 'quiet')}
-      <button class="button button-primary" id="new-event" aria-controls="integration-create" aria-expanded="false" disabled>＋ 新增事件</button>
-    </div>`) +
-    '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
+  view.innerHTML = `<header class="page-heading">
+    <div>
+      <div class="button-row">
+        <h1>事件串接</h1>
+        <button type="button" class="button button-primary" id="new-event" aria-controls="integration-create" aria-expanded="false" disabled>＋ 新增事件</button>
+      </div>
+      <p>建立事件、指定收件者，再將專屬 Webhook 網址貼到數位平台。</p>
+    </div>
+  </header>
+  <div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>`;
   const workspace = view.querySelector('#integration-workspace');
   const listPath = 'integrations?webhooks=1';
   let initial, recipients;
