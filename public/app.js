@@ -1075,6 +1075,19 @@ async function renderRecipientInvite(panel, signal) {
   draw();
 }
 
+const recipientColumns = [
+  ['label', '收件者姓名', 80],
+  ['employeeNumber', '員編', 40],
+  ['jobTitle', '職稱', 80],
+  ['unit', '服務單位', 120],
+  ['email', '可聯絡的電子郵件', 254]
+];
+
+function recipientFields() {
+  return recipientColumns.map(([key, title, max]) => `<label>${title}${key === 'label' ? '（必填）' : ''}
+    <input name="${key}" maxlength="${max}" type="${key === 'email' ? 'email' : 'text'}" ${key === 'label' ? 'required' : ''}></label>`).join('');
+}
+
 async function renderRecipients(signal) {
   const platform = currentPlatform;
   view.innerHTML = pageHeading('收件對象', '管理這個平台已配對的 LINE 收件者。') +
@@ -1087,7 +1100,7 @@ async function renderRecipients(signal) {
   }
   let recipients;
   try {
-    ({ recipients } = await api('recipients', { signal }));
+    ({ recipients } = await api('recipients?details=1', { signal }));
   } catch (error) {
     if (!signal.aborted) showPageError(body, error.message);
     return;
@@ -1100,14 +1113,14 @@ async function renderRecipients(signal) {
       <section class="panel"><h3>使用一次性配對文字</h3>
       <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送配對文字。</p>
       <form id="pair-form" class="form-stack">
-        <label>收件對象名稱<input name="label" required maxlength="80" placeholder="例如 課程承辦人"></label>
+        ${recipientFields()}
         <button class="button button-primary" type="submit">產生配對文字</button>
         <p id="pair-result" class="feedback" role="status"></p>
       </form>
       <div id="pair-preview" class="detail-block" hidden></div>
       </section>
       <section class="panel"><h3>製作 LINE 登入頁</h3>
-        <p class="muted">讓收件者掃碼登入 LINE，自行填寫名字加入名單。</p>
+        <p class="muted">讓收件者掃碼登入 LINE，填寫收件資料加入名單。</p>
         <div id="recipient-invite" class="spaced">載入邀請設定中…</div>
       </section>
     </div>
@@ -1119,6 +1132,14 @@ async function renderRecipients(signal) {
       </div>
       <p id="recipient-feedback" class="feedback" role="status"></p>
       <div id="recipients-list"></div>
+      <dialog class="action-dialog" id="edit-recipient" aria-labelledby="edit-recipient-title">
+        <h2 id="edit-recipient-title">編輯收件資料</h2>
+        <form class="form-stack">${recipientFields()}
+          <p class="feedback" role="status"></p>
+          <div class="dialog-actions"><button class="button button-secondary" type="button">取消</button>
+          <button class="button button-primary" type="submit">儲存</button></div>
+        </form>
+      </dialog>
     </section>
   </div>`;
 
@@ -1130,18 +1151,58 @@ async function renderRecipients(signal) {
   const preview = body.querySelector('#pair-preview');
   let expiryTimer;
 
+  const dialog = body.querySelector('#edit-recipient');
+  const editForm = dialog.querySelector('form');
+  const editStatus = editForm.querySelector('.feedback');
+  const save = editForm.querySelector('[type="submit"]');
+  const cancel = editForm.querySelector('[type="button"]');
+  let editingId;
+  cancel.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('cancel', event => { if (save.disabled) event.preventDefault(); });
+  signal.addEventListener('abort', () => { if (dialog.open) dialog.close(); }, {once:true});
+  editForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (save.disabled) return;
+    save.disabled = cancel.disabled = true;
+    try {
+      await api('recipient/edit', {data:{recipientId:editingId, ...Object.fromEntries(new FormData(editForm))}, signal});
+      if (signal.aborted) return;
+      dialog.close();
+      await loadList('已儲存收件資料。');
+    } catch (error) {
+      if (!signal.aborted) report(editStatus, error.message, 'danger');
+    } finally {
+      save.disabled = cancel.disabled = false;
+    }
+  });
+
   function drawList(items) {
     if (!items.length) {
       list.innerHTML = emptyState('尚無收件對象', '對方傳送配對文字或掃碼完成登記後，按「重新查詢」即可查看。');
       return;
     }
-    list.innerHTML = `<ul class="record-list">
-      ${items.map((recipient, index) => `<li>
-        <div><strong>${escapeHtml(recipient.label)}</strong></div>
-        <div class="button-row"><button class="button button-secondary" type="button" data-test="${index}">傳送測試</button>
-        <button class="button button-danger-outline" type="button" data-remove="${index}">移除</button></div>
-      </li>`).join('')}
-    </ul><div class="button-row spaced">${buttonLink('前往發送通知', '#messages', 'secondary')}</div>`;
+    list.innerHTML = `<div class="table-wrap"><table class="data-table" aria-label="平台收件名單">
+      <thead><tr>${recipientColumns.map(([,title]) => `<th scope="col">${title}</th>`).join('')}<th scope="col">操作</th></tr></thead>
+      <tbody>${items.map((recipient, index) => `<tr>
+        <th scope="row">${escapeHtml(recipient.label)}</th>
+        ${recipientColumns.slice(1).map(([key]) => `<td>${escapeHtml(recipient.details?.[key] || '—')}</td>`).join('')}
+        <td><div class="button-row">
+          <button class="button button-secondary" type="button" data-edit="${index}">編輯</button>
+          <button class="button button-secondary" type="button" data-test="${index}">傳送測試</button>
+          <button class="button button-danger-outline" type="button" data-remove="${index}">移除</button>
+        </div></td></tr>`).join('')}</tbody>
+      </table></div><div class="button-row spaced">${buttonLink('前往發送通知', '#messages', 'secondary')}</div>`;
+    for (const button of list.querySelectorAll('[data-edit]')) {
+      button.addEventListener('click', () => {
+        const recipient = items[Number(button.dataset.edit)];
+        editingId = recipient.id;
+        for (const [key] of recipientColumns) {
+          editForm.elements.namedItem(key).value = key === 'label' ? recipient.label : recipient.details?.[key] || '';
+        }
+        report(editStatus, '');
+        dialog.showModal();
+      });
+    }
     for (const button of list.querySelectorAll('[data-test]')) {
       const recipient = items[Number(button.dataset.test)];
       button.addEventListener('click', async () => {
@@ -1178,7 +1239,7 @@ async function renderRecipients(signal) {
     refresh.disabled = true;
     report(feedback, '正在查詢配對結果…');
     try {
-      const data = await api('recipients', { signal });
+      const data = await api('recipients?details=1', { signal });
       if (signal.aborted) return;
       drawList(data.recipients);
       report(feedback, message, 'success');
@@ -1197,11 +1258,12 @@ async function renderRecipients(signal) {
     const submit = form.querySelector('button');
     if (submit.disabled) return;
     const resultText = body.querySelector('#pair-result');
-    const label = new FormData(form).get('label').trim();
+    const profile = Object.fromEntries(new FormData(form));
+    const label = profile.label.trim();
     submit.disabled = true;
     report(resultText, '正在產生配對文字…');
     try {
-      const result = await api('recipient/pair', { data: { botId: platform.botId, label }, signal });
+      const result = await api('recipient/pair', { data: { ...profile, botId: platform.botId, label }, signal });
       if (signal.aborted || !form.isConnected) return;
       const expiresAt = Date.parse(result.expiresAt);
       const expiry = Number.isFinite(expiresAt) ? expiresAt : Date.now() + (result.expiresMinutes || 10) * 60_000;

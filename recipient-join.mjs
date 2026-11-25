@@ -1,3 +1,4 @@
+import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 import { createHmac } from 'node:crypto';
 import QRCode from 'qrcode';
 import { recipientHash } from './notifications.mjs';
@@ -74,9 +75,11 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
     }
     let data;
     try { data=JSON.parse(Buffer.concat(parts).toString('utf8')); } catch { return send(400,{error:'資料格式有誤。'}); }
-    const label = typeof data?.name === 'string' ? data.name.trim() : '';
+    const label = recipientName(data?.name);
     if (data?.invite !== invitation(id,row)) return send(403,{error:'邀請碼已失效，請重新掃碼。'});
     if (!label || label.length>80 || label.includes('\0')) return send(400,{error:'請填寫 1 到 80 個字元的姓名。'});
+    const details=readRecipientDetails(data);
+    if (!details) return send(400,{error:'請確認欄位長度及電子郵件格式。'});
     const token=data.token;
     if (typeof token !== 'string' || !token || token.length>4096) return send(401,{error:'請重新登入 LINE。'});
     if (!await allow('recipient-join:'+id)) return send(429,{error:'目前登記人數較多，請稍後再試。'});
@@ -92,11 +95,11 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
     const actual=await lineJson('https://api.line.me/v2/bot/profile/'+profile.userId,botToken);
     if (actual?.userId!==profile.userId) return send(409,{error:'無法由此 Bot 確認好友身分，請管理者核對 LINE Login 綁定的官方帳號與 Provider。'});
     const hash=recipientHash(key,row.bot_id,profile.userId);
-    const result=await db.query(`insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label)
-      select p.account_id,p.bot_id,$4,$5::jsonb,$6 ${source}
+    const result=await db.query(`insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label,details)
+      select p.account_id,p.bot_id,$4,$5::jsonb,$6,$7::jsonb ${source}
       where p.id=$1 and p.bot_id=$2 and p.line_setup->>'recipientLiffId'=$3
-      on conflict(bot_id,line_hash) do update set label=excluded.label,active=true,encrypted_line_id=excluded.encrypted_line_id,created_at=now()
-      where linebot_private.recipients.account_id=excluded.account_id`,[id,row.bot_id,row.liff,hash,JSON.stringify(recipientVault.seal(row.account_id,profile.userId)),label]);
+      on conflict(bot_id,line_hash) do update set label=excluded.label,details=linebot_private.recipients.details || excluded.details,active=true,encrypted_line_id=excluded.encrypted_line_id,created_at=now()
+      where linebot_private.recipients.account_id=excluded.account_id`,[id,row.bot_id,row.liff,hash,JSON.stringify(recipientVault.seal(row.account_id,profile.userId)),label,JSON.stringify(details)]);
     return result.rowCount ? send(200,{ok:true}) : send(409,{error:'平台設定已更新，請重新掃碼。'});
   }
   async function saveLoginProfile(owner,id,input) {

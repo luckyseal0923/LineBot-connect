@@ -26,7 +26,7 @@ async function start() {
       friend.hidden=true;
       statusText.textContent='正在加入…';
       try {
-        const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invite,token:liff.getAccessToken(),name:form.elements.namedItem('name').value})});
+        const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invite,token:liff.getAccessToken(),...Object.fromEntries(new FormData(form))})});
         const body=await res.json();
         if (!res.ok) {
           if (body.addFriend) { friend.href=body.addFriend; friend.hidden=false; }

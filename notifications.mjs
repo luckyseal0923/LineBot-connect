@@ -1,3 +1,4 @@
+import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createLineTextSender } from './line-client.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -20,21 +21,29 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
    if(!code||!/^U[0-9a-f]{32}$/.test(user||''))continue;
    const encrypted=JSON.stringify(recipientVault.seal(account,user));
    await db.query(`with claimed as (update linebot_private.pairing_codes set consumed_at=now()
-      where account_id=$1 and bot_id=$2 and code_hash=$3 and consumed_at is null and expires_at>now() returning label)
-     insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label)
-     select $1,$2,$4,$5::jsonb,label from claimed
-     on conflict(bot_id,line_hash) do update set encrypted_line_id=excluded.encrypted_line_id,label=excluded.label,active=true,created_at=now()
+      where account_id=$1 and bot_id=$2 and code_hash=$3 and consumed_at is null and expires_at>now() returning label,details)
+     insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label,details)
+     select $1,$2,$4,$5::jsonb,label,details from claimed
+     on conflict(bot_id,line_hash) do update set encrypted_line_id=excluded.encrypted_line_id,label=excluded.label,details=linebot_private.recipients.details || excluded.details,active=true,created_at=now()
      where linebot_private.recipients.account_id=excluded.account_id`,[account,bot,digest(code[1]),recipientHash(key,bot,user),encrypted]);
   }
  }
- async function createPairing(account,bot,label){
-  if(!uuid.test(bot||'')||typeof label!=='string'||!label.trim()||label.trim().length>80)return null;
+ async function createPairing(account,bot,label,input={}){
+  const details=readRecipientDetails(input);
+  if(!uuid.test(bot||'')||!details||!recipientName(label))return null;
   const code=randomBytes(16).toString('hex');
-  const result=await db.query(`insert into linebot_private.pairing_codes(account_id,bot_id,code_hash,label,expires_at)
-   select $1,id,$3,$4,now()+interval '10 minutes' from linebot_private.bot_credentials where id=$2 and account_id=$1 and enabled=true returning expires_at`,[account,bot,digest(code),label.trim()]);
+  const result=await db.query(`insert into linebot_private.pairing_codes(account_id,bot_id,code_hash,label,details,expires_at)
+   select $1,id,$3,$4,$5::jsonb,now()+interval '10 minutes' from linebot_private.bot_credentials where id=$2 and account_id=$1 and enabled=true returning expires_at`,[account,bot,digest(code),label.trim(),JSON.stringify(details)]);
   return result.rowCount?{message:`綁定 ${code}`,expiresMinutes:10,expiresAt:result.rows[0].expires_at}:null;
  }
- async function list(account,botId=null){return (await db.query(`select r.id,r.bot_id as "botId",r.label,b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and ($2::uuid is null or r.bot_id=$2::uuid) and r.active and b.enabled order by r.created_at desc limit 200`,[account,botId])).rows;}
+ async function list(account,botId=null,withDetails=false){return (await db.query(`select r.id,r.bot_id as "botId",r.label,${withDetails ? 'r.details,' : ''}b.bot_name as "botName" from linebot_private.recipients r join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id where r.account_id=$1 and ($2::uuid is null or r.bot_id=$2::uuid) and r.active and b.enabled order by r.created_at desc limit 200`,[account,botId])).rows;}
+ async function editRecipient(account,bot,id,input) {
+  const label=recipientName(input.label), details=readRecipientDetails(input);
+  if (!uuid.test(id) || !label || !details) return {error:'請確認姓名、欄位長度及電子郵件格式。'};
+  const result=await db.query(`update linebot_private.recipients set label=$4,details=$5::jsonb
+    where account_id=$1 and bot_id=$2 and id=$3 and active returning id`,[account,bot,id,label,JSON.stringify(details)]);
+  return result.rowCount ? {ok:true} : null;
+ }
  async function disable(account,id){if(!uuid.test(id||''))return false;return (await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where id=$1 and account_id=$2 and active returning id",[id,account])).rowCount===1;}
  async function history(account,botId=null){
   return (await db.query(`select n.id,n.status,n.line_status as "lineStatus",n.created_at as "createdAt",b.bot_name as "botName",r.label
@@ -61,5 +70,5 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
   await db.query('update linebot_private.notifications set status=$1,line_status=$2,completed_at=now() where id=$3 and account_id=$4',[status,code,requestId,account]);
   return {status};
  }
- return {pair,createPairing,list,disable,history,send};
+ return {pair,createPairing,list,editRecipient,disable,history,send};
 }

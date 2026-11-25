@@ -12,8 +12,12 @@
 <h1>加入收件名單</h1>
 <p id="status" role="status">正在開啟 LINE 登入…</p>
 <form hidden>
-<label for="name">你的名字</label>
+<label for="name">收件者姓名（必填）</label>
 <input id="name" name="name" autocomplete="name" required maxlength="80">
+<label for="employeeNumber">員編</label><input id="employeeNumber" name="employeeNumber" maxlength="40">
+<label for="jobTitle">職稱</label><input id="jobTitle" name="jobTitle" maxlength="80" autocomplete="organization-title">
+<label for="unit">服務單位</label><input id="unit" name="unit" maxlength="120" autocomplete="organization">
+<label for="email">可聯絡的電子郵件</label><input id="email" name="email" type="email" maxlength="254" autocomplete="email">
 <button>加入收件名單</button>
 </form>
 <a id="friend" hidden target="_blank" rel="noopener noreferrer">前往 LINE 加入好友</a>

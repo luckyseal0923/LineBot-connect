@@ -197,8 +197,15 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(!notifications){send(res,503,{error:'通知功能尚未開放。'});return true;}
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
-        if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user))});return true;}
+        if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user),requestedPlatform && requestUrl.searchParams.get("details")==="1")});return true;}
         if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id,await platformBot(user))});return true;}
+        if(path==='/independent-api/recipient/edit' && req.method==='POST'){
+          const bot=await platformBot(user);
+          if(!bot){send(res,400,{error:'請先選擇要編輯的平台。'});return true;}
+          const data=await read(req);
+          const result=await notifications.editRecipient(user.id,bot,data.recipientId,data);
+          send(res,result?(result.error?400:200):404,result||{error:'找不到此平台的收件者。'});return true;
+        }
         if(path==='/independent-api/recipient/login-profile' && req.method==='POST'){
           if(!recipientJoin){send(res,503,{error:'此環境尚未提供 LINE 登入設定。'});return true;}
           const result=await recipientJoin.saveLoginProfile(user.id,requestedPlatform,await read(req));
@@ -215,7 +222,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           if(!await allow('pairing')||!await allow(`pairing:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
           const data=await read(req), scopedBot=await platformBot(user);
           if(scopedBot && data.botId!==scopedBot){send(res,403,{error:'Bot 不屬於此平台。'});return true;}
-          const result=await notifications.createPairing(user.id,data.botId,data.label);
+          const result=await notifications.createPairing(user.id,data.botId,data.label,data);
           send(res,result?200:400,result||{error:'請選擇自己的啟用中 Bot 並填寫名稱。'});return true;
         }
         if(path==='/independent-api/recipient/disable'&&req.method==='POST'){

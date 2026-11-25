@@ -9,7 +9,7 @@ import {createNotifications} from './notifications.mjs';
 test('one-time pairing is scoped to the bot and account; sends are deduplicated and do not expose content',async()=>{
  const db=new PGlite();try{
   await db.exec("create role anon; create role authenticated; create role linebot_runtime; set linebot.isolated_test='yes';");
-  for(const f of ['005_independent_accounts.sql','006_runtime_grants.sql','011_multiple_bots.sql','012_notifications.sql'])await db.exec(await readFile(new URL('./db/'+f,import.meta.url),'utf8'));
+  for(const f of ['005_independent_accounts.sql','006_runtime_grants.sql','011_multiple_bots.sql','012_notifications.sql','019_recipient_details.sql'])await db.exec(await readFile(new URL('./db/'+f,import.meta.url),'utf8'));
   const accounts=await db.query("insert into linebot_private.accounts(username,display_name,password_salt,password_hash,status) values ('alice','Alice','s','h','active'),('bob','Bob','s','h','active') returning id,username");
   const alice=accounts.rows.find(x=>x.username==='alice').id,bob=accounts.rows.find(x=>x.username==='bob').id,key=randomBytes(32);
   const tokenVault=createCredentialVault(key,{context:'channel-access-token'}),recipientVault=createCredentialVault(key,{context:'line-recipient'});
