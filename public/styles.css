@@ -637,6 +637,7 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 }
 .route-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .route-line { fill: none; stroke: #78958a; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.route-line.is-pairing { stroke: #638776; stroke-dasharray: 1 5; }
 .route-line.is-unavailable { stroke-dasharray: 4 4; }
 .route-line.is-highlighted { stroke: #09654e; stroke-width: 2.65; }
 .route-line.is-dimmed { opacity: .22; }
@@ -679,6 +680,7 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .route-integration .chip { max-width: 7.75rem; margin: 0; }
 .route-integration:hover, .route-integration[aria-pressed="true"], .route-node.is-highlighted { border-color: #3b8b70; background: #f4fbf6; }
 .route-integration[aria-pressed="true"] { box-shadow: 0 0 0 1px #3b8b70; }
+.route-pending { border-style: dashed; font-weight: 650; color: var(--deep); }
 .route-person { border-inline-start: 3px solid #77a78b; }
 .route-source { border-inline-start: 3px solid #6b91a2; }
 .route-description { min-height: 1.35em; margin-top: .55rem; font-size: .86rem; color: var(--muted); }
