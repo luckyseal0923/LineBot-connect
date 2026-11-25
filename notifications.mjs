@@ -1,4 +1,4 @@
-import { createPairingRegistration } from './pairing-registration.mjs';
+import { createPairingRegistration, readPairingCode } from './pairing-registration.mjs';
 import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createLineTextSender } from './line-client.mjs';
@@ -23,9 +23,12 @@ export function createNotifications({db,recipientVault,tokenVault,key,allow,publ
     await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where account_id=$1 and bot_id=$2 and line_hash=$3 and created_at<=to_timestamp($4::double precision/1000)",[account,bot,recipientHash(key,bot,user),event.timestamp]);continue;
    }
    if (registration && event?.type==='message' && event.source?.type==='user' && event.message?.type==='text' &&
-       /^U[0-9a-f]{32}$/.test(user || '') && /^\d{6}$/.test((event.message.text || '').trim())) {
-     await registration.claim(account,bot,user,recipientHash(key,bot,user),(event.message.text || '').trim(),event.replyToken);
-     continue;
+       /^U[0-9a-f]{32}$/.test(user || '')) {
+     const shortCode = readPairingCode(event.message.text);
+     if (shortCode) {
+       await registration.claim(account,bot,user,recipientHash(key,bot,user),shortCode,event.replyToken);
+       continue;
+     }
    }
    const code=event?.type==='message'&&event.source?.type==='user'&&event.message?.type==='text'&&/^綁定 ([0-9a-f]{32})$/.exec(event.message.text||'');
    if(!code||!/^U[0-9a-f]{32}$/.test(user||''))continue;

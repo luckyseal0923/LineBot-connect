@@ -8,6 +8,17 @@ const inactive = '這個連結已使用或已失效。如尚未完成登記，�
 const activeBot = `join linebot_private.accounts a on a.id=b.account_id and a.status='active'
   join linebot_private.platform_services p on p.bot_id=b.id and p.account_id=b.account_id`;
 
+function pairingMessage(code) {
+  return `這是我的配對碼：${code}。請直接送出，不用修改。`;
+}
+
+export function readPairingCode(text) {
+  if (typeof text !== 'string') return null;
+  const message = text.trim();
+  const code = message.match(/[0-9]{6}/)?.[0];
+  return code && (message === code || message === pairingMessage(code)) ? code : null;
+}
+
 export function createPairingRegistration({db, key, allow, publicOrigin, recipientVault, tokenVault, fetchImpl}) {
   const origin = new URL(publicOrigin).origin;
   const mac = value => createHmac('sha256', key).update(value).digest('base64url');
@@ -28,7 +39,7 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
       if (result.rows.length) {
         const invitation = {message:code,expiresMinutes:10,expiresAt:result.rows[0].expires_at};
         if (info?.basicId && info.userId === target.bot_user_id) {
-          const chatUrl = `https://line.me/R/oaMessage/${encodeURIComponent(info.basicId)}/?${encodeURIComponent(code)}`;
+          const chatUrl = `https://line.me/R/oaMessage/${encodeURIComponent(info.basicId)}/?${encodeURIComponent(pairingMessage(code))}`;
           invitation.chatQr = await QRCode.toDataURL(chatUrl,{width:260,margin:4});
         }
         return invitation;
