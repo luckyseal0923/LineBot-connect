@@ -374,7 +374,7 @@ async function renderOverview(signal) {
     <div id="overview-next"></div>
     <section class="panel section-gap" aria-labelledby="overview-map-title">
       <div class="section-heading"><div><h2 id="overview-map-title">通知路線圖</h2>
-        <p class="muted small">已設定的事件可點選查看通知對象。</p></div>${buttonLink('管理串接', '#integrations', 'secondary')}</div>
+        <p class="muted small">指定事件的收件者後，圖上就會顯示通知路線。</p></div>${buttonLink('管理串接', '#integrations', 'secondary')}</div>
       <div id="overview-map"><p class="muted" role="status">正在載入通知路線…</p></div>
     </section>
     <section class="panel section-gap" aria-labelledby="overview-history-title">
@@ -434,7 +434,6 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
   });
   const pending = (label, hash) => `<a class="route-node route-pending" href="${escapeHtml(workspaceLink(hash))}">${label}</a>`;
   const unavailable = label => `<div class="route-node">${label}暫時無法載入</div>`;
-  const hasPairLines = recipients?.some(person => !people.get(person.id).assigned);
   target.innerHTML = `<div class="route-graph">
     <div class="route-canvas" role="group" aria-label="${escapeHtml(platformName(platform))}的通知路線">
       <svg class="route-lines" aria-hidden="true"></svg>
@@ -459,14 +458,12 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
       </div>
     </div>
     ${routes.some(route => !route.ready) ? '<p class="route-legend small"><span>可發送</span><span class="unavailable">暫無法發送</span></p>' : ''}
-    ${hasPairLines ? '<p class="muted small">點線表示已與 Bot 配對。</p>' : ''}
     <p class="route-description" aria-live="polite"></p>
   </div>`;
 
   const canvas = target.querySelector('.route-canvas');
   const svg = canvas.querySelector('.route-lines');
   const source = canvas.querySelector('.route-source');
-  const botNode = canvas.querySelector('.route-bot');
   const buttons = [...canvas.querySelectorAll('.route-integration')];
   const recipientElements = canvas.querySelectorAll('.route-person');
   const personNodes = new Map([...people.keys()].map((id, index) => [id, recipientElements[index]]));
@@ -479,7 +476,7 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
     svg.replaceChildren();
 
-    const line = (from, to, ready, highlighted, pairing = false) => {
+    const line = (from, to, ready, highlighted) => {
       const start = from.getBoundingClientRect();
       const end = to.getBoundingClientRect();
       const x1 = start.right - bounds.left, y1 = start.top + start.height / 2 - bounds.top;
@@ -488,17 +485,11 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
       path.classList.add('route-line');
-      path.classList.toggle('is-pairing', pairing);
       path.classList.toggle('is-unavailable', !ready);
       path.classList.toggle('is-highlighted', highlighted);
       path.classList.toggle('is-dimmed', selected >= 0 && !highlighted);
       svg.append(path);
     };
-    if (botNode && hasPairLines) {
-      for (const [id, person] of people) {
-        if (person.paired && !person.assigned) line(botNode, personNodes.get(id), true, false, true);
-      }
-    }
     const drawRoute = index => {
       const { item, ready } = routes[index];
       line(source, buttons[index], ready, selected === index);
