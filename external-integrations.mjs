@@ -32,7 +32,7 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
       from linebot_private.integrations i
       join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
       join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
-      where i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId, botId, includeWebhook]);
+      where i.deleted_at is null and i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId, botId, includeWebhook]);
     return rows.map(({ keyHash, ...item }) => keyHash
       ? { ...item, webhookToken: tokenFor(item.id, keyHash) } : item);
   }
@@ -57,7 +57,7 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
 
     const result = await db.query(`update linebot_private.integrations i set name=$3,event_name=$3,recipient_id=$2,
       revision=i.revision + case when i.recipient_id<>$2 then 1 else 0 end
-      where i.account_id=$1 and i.id=$4 and exists (select 1 ${eligibleRecipients} and r.bot_id=(select prior.bot_id from linebot_private.recipients prior where prior.id=i.recipient_id and prior.account_id=i.account_id)) returning i.id`,
+      where i.deleted_at is null and i.account_id=$1 and i.id=$4 and exists (select 1 ${eligibleRecipients} and r.bot_id=(select prior.bot_id from linebot_private.recipients prior where prior.id=i.recipient_id and prior.account_id=i.account_id)) returning i.id`,
     [accountId, input.recipientId, name, id]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
@@ -67,24 +67,34 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
       const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
       const keyHash = digest(apiKey);
       const { rows } = await db.query(`update linebot_private.integrations set key_hash=$3,key_tail=$4,revision=revision+1
-        where id=$1 and account_id=$2 returning id`, [id, accountId, keyHash, apiKey.slice(-6)]);
+        where deleted_at is null and id=$1 and account_id=$2 returning id`, [id, accountId, keyHash, apiKey.slice(-6)]);
       const webhookId = rows[0]?.id;
       return webhookId ? { id: webhookId, apiKey, webhookToken: tokenFor(webhookId, keyHash) } : { error: 'unavailable' };
     }
     if (action === 'revoke') {
       const result = await db.query(`update linebot_private.integrations
         set enabled=false,key_hash=null,key_tail=null,revision=revision+1
-        where id=$1 and account_id=$2 returning id`, [id, accountId]);
+        where deleted_at is null and id=$1 and account_id=$2 returning id`, [id, accountId]);
       return result.rowCount ? { id } : { error: 'unavailable' };
     }
     const enabled = action === 'enable';
     const result = await db.query(`update linebot_private.integrations i
       set enabled=$3,revision=i.revision + case when i.enabled<>$3 then 1 else 0 end
-      where i.id=$1 and i.account_id=$2 and (not $3::boolean or (
+      where i.deleted_at is null and i.id=$1 and i.account_id=$2 and (not $3::boolean or (
         i.key_hash is not null and exists (select 1 from linebot_private.recipients r
           join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
           where r.id=i.recipient_id and r.account_id=i.account_id and r.active and b.enabled)))
       returning i.id`, [id, accountId, enabled]);
+    return result.rowCount ? { id } : { error: 'unavailable' };
+  }
+
+  async function remove(accountId, id, botId) {
+    const result = await db.query(`update linebot_private.integrations i
+      set deleted_at=now(), enabled=false, key_hash=null, key_tail=null, revision=i.revision+1
+      from linebot_private.recipients r
+      where i.id=$1 and i.account_id=$2 and i.deleted_at is null
+        and r.id=i.recipient_id and r.account_id=i.account_id and r.bot_id=$3
+      returning i.id`, [id, accountId, botId]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
 
@@ -250,5 +260,5 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     return true;
   }
 
-  return { list, create, edit, manage, authenticate, authenticateWebhook, enqueue, status, testSend, runNext };
+  return { list, create, edit, manage, remove, authenticate, authenticateWebhook, enqueue, status, testSend, runNext };
 }

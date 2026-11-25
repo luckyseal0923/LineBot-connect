@@ -1394,6 +1394,7 @@ async function renderIntegrations(signal) {
               ${item.enabled ? action('disable', '停用串接') : action('enable', '啟用串接', !item.targetReady || !item.keyTail)}
               ${action('rotate', item.keyTail ? '換發網址' : '產生新網址')}
               ${item.keyTail ? action('revoke', '撤銷 Webhook', false, 'danger-outline') : ''}
+              ${action('delete', '刪除事件', false, 'danger-outline')}
             </div>
           </details>
         </div>
@@ -1477,6 +1478,7 @@ async function renderIntegrations(signal) {
       test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
       rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發會讓舊網址與舊金鑰失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
+      delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel}）？刪除後無法復原，原 Webhook 網址與金鑰會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],
       revoke: ['撤銷 Webhook', '撤銷會讓這個事件的網址與金鑰失效。', '確認撤銷', 'danger']
     };
     if (confirmation[action]) {
@@ -1486,10 +1488,17 @@ async function renderIntegrations(signal) {
     const success = {
       test: '測試通知已送出處理，請查看發送紀錄並向收件人確認。',
       disable: '串接已停用。', enable: '串接已啟用。',
-      rotate: '新網址已產生。', revoke: 'Webhook 已撤銷。'
+      rotate: '新網址已產生。', revoke: 'Webhook 已撤銷。', delete: '已刪除所選事件。'
     };
     if (action === 'test' && !testKeys.has(item.id)) testKeys.set(item.id, 'test-' + crypto.randomUUID());
-    const after = action === 'test' ? () => testKeys.delete(item.id) : action === 'revoke' ? hideSecret : undefined;
+    const after = () => {
+      if (action === 'test' || action === 'delete') testKeys.delete(item.id);
+      if (action === 'delete' || action === 'revoke') hideSecret();
+      if (action === 'delete') {
+        items = items.filter(entry => entry.id !== item.id);
+        renderList();
+      }
+    };
     change(button, `${path}/${item.id}/${action}`, action === 'test' ? { eventKey: testKeys.get(item.id) } : {}, success[action], after);
   });
   workspace.querySelector('#integration-refresh').addEventListener('click', async event => {

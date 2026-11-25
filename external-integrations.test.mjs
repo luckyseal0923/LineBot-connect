@@ -26,6 +26,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     await db.exec(await readFile(new URL('./db/015_external_integrations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/017_platform_services.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/018_line_setup_details.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('./db/020_delete_integration.sql', import.meta.url), 'utf8'));
     assert.equal(await hasExternalIntegrationSchema(db), true);
     assert.equal((await db.query('select value from other_platform.records')).rows[0].value, 'unchanged');
 
@@ -276,6 +277,12 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(delivered.to, secondLineId);
     assert.equal(delivered.messages[0].text, '「候補通知」已觸發，請至數位平台查看。');
     assert.equal((await (await lookup(followUp.apiKey, followUpReceipt.messageId)).json()).status, 'accepted');
+
+    assert.deepEqual(await integrations.remove(alice.id, id, bob.botId), {error:'unavailable'});
+    assert.deepEqual(await integrations.remove(alice.id, id, alice.botId), {id});
+    assert.equal((await integrations.list(alice.id)).some(item => item.id === id), false);
+    assert.deepEqual(await integrations.manage(alice.id, id, 'rotate'), {error:'unavailable'});
+    assert.ok((await notifications.history(alice.id)).some(record => record.integrationName === '課程報名'));
 
     await db.exec('reset role; set role linebot_reviewer');
     assert.equal((await db.query("select integration_name from linebot_private.admin_notifications where username='alice' limit 1")).rows[0].integration_name, '課程報名');

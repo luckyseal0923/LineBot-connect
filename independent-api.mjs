@@ -144,7 +144,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(!await bots.disable(user.id,data.botId)){send(res,404,{error:'找不到 LINE Bot。'});return true;}
         send(res,200,{message:'已停用'});return true;
       }
-      const integrationAction = /^\/independent-api\/integrations\/([0-9a-f-]{36})\/(edit|enable|disable|rotate|revoke|test)$/i.exec(path);
+      const integrationAction = /^\/independent-api\/integrations\/([0-9a-f-]{36})\/(edit|enable|disable|rotate|revoke|test|delete)$/i.exec(path);
       if (path === '/independent-api/integrations' || (integrationAction && botIdPattern.test(integrationAction[1]))) {
         const user = await accounts.me(getToken(req));
         if (!user) { send(res, 401, { error: '請先登入。' }); return true; }
@@ -173,6 +173,10 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           const input=await read(req);
           if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===input.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
           result = await integrations.create(user.id, input, scopedBot);
+        }
+        else if (action === 'delete') {
+          if (!scopedBot) { send(res,400,{error:'請先選擇事件所屬的平台。'});return true; }
+          result = await integrations.remove(user.id, id, scopedBot);
         }
         else if (scopedBot && !(await integrations.list(user.id,scopedBot)).some(item=>item.id===id)) {send(res,404,{error:'找不到此平台的串接。'});return true;}
         else if (action === 'edit') result = await integrations.edit(user.id, id, await read(req));
