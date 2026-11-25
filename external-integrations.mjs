@@ -31,7 +31,7 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   const assigned = 'array_remove(array_prepend(i.recipient_id,i.extra_recipient_ids),null)';
 
   async function list(accountId, botId = null, includeWebhook = false, platformId = null) {
-    const { rows } = await db.query(`select i.id,i.name,i.enabled,i.key_tail as "keyTail",case when $3 then i.key_hash end as "keyHash",
+    const { rows } = await db.query(`select i.id,i.name,i.webhook_number::text as "webhookNumber",i.enabled,i.key_tail as "keyTail",case when $3 then i.key_hash end as "keyHash",
       i.recipient_id as "recipientId",b.id as "botId",b.bot_name as "botName",i.event_name as "eventName",
       targets.people as recipients,targets.ready as "targetReady",i.created_at as "createdAt"
       from linebot_private.integrations i ${eventBotJoins}

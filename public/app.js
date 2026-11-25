@@ -364,6 +364,10 @@ function integrationStatus(item) {
   return item.targetReady ? ['啟用中', 'success'] : ['收件者或 Bot 無法使用', 'warning'];
 }
 
+function webhookCode(item) {
+  return 'WH-' + String(item.webhookNumber).padStart(3, '0');
+}
+
 function integrationName(item) {
   return item.eventName || item.name || '事件名稱待設定';
 }
@@ -375,7 +379,7 @@ async function renderOverview(signal) {
     <div id="overview-next"></div>
     <section class="panel section-gap" aria-labelledby="overview-map-title">
       <div class="section-heading"><div><h2 id="overview-map-title">通知路線圖</h2>
-        <p class="muted small">指定事件的收件者後，圖上就會顯示通知路線。</p></div>${buttonLink('管理串接', '#integrations', 'secondary')}</div>
+        <p class="muted small">點選事件或 Webhook 代號，即可查看這條路線的收件者。</p></div>${buttonLink('管理串接', '#integrations', 'secondary')}</div>
       <div id="overview-map"><p class="muted" role="status">正在載入通知路線…</p></div>
     </section>
     <section class="panel section-gap" aria-labelledby="overview-history-title">
@@ -435,21 +439,23 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
   target.innerHTML = `<div class="route-graph">
     <div class="route-canvas" role="group" aria-label="${escapeHtml(platformName(platform))}的通知路線">
       <svg class="route-lines" aria-hidden="true"></svg>
-      <div class="route-column"><h3>外部平台</h3>
-        <div class="route-node route-source"><strong>${escapeHtml(platformName(platform))}</strong><small>${routes.length ? '事件觸發' : '通知來源'}</small></div>
-      </div>
-      <div class="route-column route-station"><h3>LINEBOT 接線站</h3>
-        ${platform.botId
-          ? `<p class="route-node route-bot"><strong>${escapeHtml(platform.botName || 'LINE Bot')}</strong><small>${platform.botEnabled ? 'Bot 已啟用' : 'Bot 已停用'}</small></p>`
-          : pending('LINE Bot 待設定', '#bot')}
-        ${!integrations ? unavailable('事件串接') : !routes.length ? pending('事件串接待設定', '#integrations') : ''}
-        ${routes.map(({ item, label, tone }) => `<button type="button" class="route-node route-integration" aria-pressed="false">
-          <span class="route-event-name"><strong>${escapeHtml(integrationName(item))}</strong>
-            ${!item.eventName ? '<small>舊名稱待確認</small>' : ''}</span>
-          ${chip(label, tone)}<span class="sr-only">，設定的收件者為 ${escapeHtml(item.recipientLabel || '待設定')}</span>
+      <div class="route-stages-grid">
+      <div class="route-column route-stages">
+        <h3><small>外部平台 · 觸發事件</small>${escapeHtml(platformName(platform))}</h3>
+        ${!integrations ? unavailable('事件') : !routes.length ? pending('事件串接待設定', '#integrations') : ''}
+        ${routes.map(({ item }) => `<button type="button" class="route-node route-source" aria-pressed="false">
+          <strong>${escapeHtml(integrationName(item))}</strong>${!item.eventName ? '<small>舊名稱待確認</small>' : ''}
         </button>`).join('')}
       </div>
-      <div class="route-column"><h3>收件者</h3>
+      <div class="route-column route-stages">
+        <h3><small>LINE Bot · Webhook</small>${platform.botId ? escapeHtml(platform.botName || 'LINE Bot') : `<a href="${escapeHtml(workspaceLink('#bot'))}">LINE Bot 待設定</a>`}</h3>
+        ${!integrations ? unavailable('Webhook') : !routes.length ? '<div class="route-node route-pending">Webhook 待建立</div>' : ''}
+        ${routes.map(({ item, label, tone }) => `<button type="button" class="route-node route-integration" aria-pressed="false">
+          <strong>${escapeHtml(webhookCode(item))}</strong>${chip(label, tone)}
+        </button>`).join('')}
+      </div>
+      </div>
+      <div class="route-column"><h3><small>通知對象</small>收件者</h3>
         ${[...people.values()].map(person => `<div class="route-node route-person"><strong>${escapeHtml(person.label)}</strong>
           ${!person.paired ? '<small>目前無法接收</small>' : !person.assigned ? '<small>已配對' + (integrations ? ' · 事件待指定' : '') + '</small>' : ''}</div>`).join('')}
         ${!recipients ? unavailable('收件名單') : !people.size ? pending('收件者待設定', '#recipients') : ''}
@@ -460,8 +466,9 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
   </div>`;
 
   const canvas = target.querySelector('.route-canvas');
+  canvas.style.setProperty('--stage-rows', String(1 + Math.max(1, routes.length)));
   const svg = canvas.querySelector('.route-lines');
-  const source = canvas.querySelector('.route-source');
+  const sources = [...canvas.querySelectorAll('.route-source')];
   const buttons = [...canvas.querySelectorAll('.route-integration')];
   const recipientElements = canvas.querySelectorAll('.route-person');
   const personNodes = new Map([...people.keys()].map((id, index) => [id, recipientElements[index]]));
@@ -490,7 +497,7 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     };
     const drawRoute = index => {
       const { item, ready } = routes[index];
-      line(source, buttons[index], ready, selected === index);
+      line(sources[index], buttons[index], ready, selected === index);
       for (const person of item.recipients) {
         line(buttons[index], personNodes.get(person.id), ready && person.active, selected === index);
       }
@@ -499,18 +506,21 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     if (selected >= 0) drawRoute(selected);
   }
 
-  buttons.forEach((button, index) => button.addEventListener('click', () => {
+  function selectRoute(index) {
     selected = selected === index ? -1 : index;
     buttons.forEach((item, key) => item.setAttribute('aria-pressed', String(key === selected)));
     const route = routes[selected];
-    source.classList.toggle('is-highlighted', Boolean(route));
+    sources.forEach((node, key) => node.setAttribute('aria-pressed', String(key === selected)));
     for (const [id, node] of personNodes) node.classList.toggle('is-highlighted', Boolean(route?.item.recipients.some(person=>person.id===id)));
-    description.textContent = route ? `${integrationName(route.item)} → ${route.item.recipientLabel || '收件者待設定'}（${route.label}）` : '';
+    description.textContent = route ? `${integrationName(route.item)} → ${webhookCode(route.item)} → ${route.item.recipientLabel || '收件者待設定'}（${route.label}）` : '';
     draw();
-  }));
+  }
+  for (const nodes of [sources, buttons]) {
+    nodes.forEach((node, index) => node.addEventListener('click', () => selectRoute(index)));
+  }
   const observer = new ResizeObserver(draw);
   observer.observe(canvas);
-  for (const button of buttons) observer.observe(button);
+  for (const node of [...sources, ...buttons, ...recipientElements]) observer.observe(node);
   signal.addEventListener('abort', () => observer.disconnect(), { once: true });
   draw();
 }
@@ -1380,6 +1390,7 @@ async function renderIntegrations(signal) {
         <div class="section-heading"><h3 tabindex="-1">${escapeHtml(integrationName(item))}</h3>${chip(...status)}</div>
         ${!item.eventName ? '<p class="muted small">沿用舊名稱，請確認觸發事件。</p>' : ''}
         <div class="integration-meta small">
+          <span>Webhook 代號 <strong>${escapeHtml(webhookCode(item))}</strong></span>
           <span>收件者 <strong>${escapeHtml(item.recipientLabel || '待設定')}</strong></span>
         </div>
         <div class="integration-actions">

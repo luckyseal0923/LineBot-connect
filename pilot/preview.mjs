@@ -16,7 +16,7 @@ import { createLoanSource } from './loan-source.mjs';
 const migrations = [
   '005_independent_accounts', '006_runtime_grants', '007_review_retention', '011_multiple_bots',
   '012_notifications', '013_admin_monitoring', '014_line_quota', '015_external_integrations', '017_platform_services', '018_line_setup_details',
-  '019_recipient_details', '020_delete_integration', '021_event_recipients'
+  '019_recipient_details', '020_delete_integration', '021_event_recipients', '022_webhook_number'
 ];
 
 function listen(server, port) {

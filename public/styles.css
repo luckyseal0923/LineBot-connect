@@ -627,8 +627,9 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .route-canvas {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: clamp(1.55rem, 2.7vw, 2.35rem);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: clamp(1.55rem, 2.7vw, 2.35rem);
+  row-gap: .48rem;
   align-items: start;
   padding: 1rem;
   border: 1px solid var(--border);
@@ -641,16 +642,10 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .route-line.is-highlighted { stroke: #09654e; stroke-width: 2.65; }
 .route-line.is-dimmed { opacity: .22; }
 .route-column { min-width: 0; display: grid; gap: .48rem; }
-.route-column h3 { margin-bottom: .06rem; color: var(--deep); font-size: .87rem; }
-.route-station {
-  display: grid;
-  padding: .67rem;
-  margin: -.35rem 0;
-  border: 1px solid #a7cabc;
-  border-radius: .65rem;
-  background: #e9f6ee;
-}
-.route-bot { color: #3a5c4f; font-size: .82rem; overflow-wrap: anywhere; }
+.route-stages { grid-row: 1 / span var(--stage-rows); grid-template-rows: subgrid; align-self: stretch; }
+.route-stages-grid { display: grid; grid-column: span 2; grid-template-columns: subgrid; row-gap: .48rem; }
+.route-column h3 { margin: 0 0 .25rem; color: var(--deep); font-size: 1rem; overflow-wrap: anywhere; }
+.route-column h3 small { display: block; font-size: .76rem; font-weight: 500; color: var(--muted); }
 .route-node {
   position: relative;
   z-index: 2;
@@ -671,14 +666,12 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .route-integration {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: .4rem;
+  justify-items: start;
+  gap: .25rem;
 }
-.route-event-name > :is(strong, small) { display: block; }
 .route-integration .chip { max-width: 7.75rem; margin: 0; }
-.route-integration:hover, .route-integration[aria-pressed="true"], .route-node.is-highlighted { border-color: #3b8b70; background: #f4fbf6; }
-.route-integration[aria-pressed="true"] { box-shadow: 0 0 0 1px #3b8b70; }
+button.route-node:hover, button.route-node[aria-pressed="true"], .route-node.is-highlighted { border-color: #3b8b70; background: #f4fbf6; }
+button.route-node[aria-pressed="true"] { box-shadow: 0 0 0 1px #3b8b70; }
 .route-pending { border-style: dashed; font-weight: 650; color: var(--deep); }
 .route-person { border-inline-start: 3px solid #77a78b; }
 .route-source { border-inline-start: 3px solid #6b91a2; }
