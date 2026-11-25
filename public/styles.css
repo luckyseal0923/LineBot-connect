@@ -467,6 +467,15 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .help-block p { padding-block: .17rem .48rem; }
 .wizard-panel { max-width: 54rem; }
 .wizard-panel .form-stack { max-width: 37rem; }
+.bot-setup-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.bot-setup-path { display: flex; flex-direction: column; gap: 1rem; padding: clamp(1.25rem, 2vw, 2rem); }
+.bot-setup-path.assisted { background: #f5fbf7; border-color: #aacdb9; }
+.bot-setup-path p, .bot-setup-path ol, .ai-setup-handoff p { color: var(--muted); }
+.bot-setup-path ol { margin: 0 0 .5rem; padding-inline-start: 1.45rem; }
+.bot-setup-path li + li { margin-top: .55rem; }
+.bot-setup-path .button { align-self: flex-start; margin-top: auto; }
+.ai-setup-handoff { border-top: 1px solid var(--border); margin-top: 1.4rem; padding-top: 1.2rem; }
+.ai-setup-handoff > p { margin: .45rem 0 1rem; }
 .line-setup-panel { max-width: 62rem; }
 .line-setup-fields {
   display: grid;

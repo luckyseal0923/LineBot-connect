@@ -55,7 +55,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         send(res,200,{username:user.username,displayName:user.display_name,status:user.status});return true;
       }
-      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path==='/independent-api/platforms/attach' || path===lineSetupPath) {
+      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path===lineSetupPath) {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(!platforms){send(res,503,{error:'數位平台功能尚未開放。'});return true;}
@@ -82,7 +82,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           else send(res, 200, result);
           return true;
         }
-        const result=path.endsWith('/rename')?await platforms.rename(user.id,data.id,data.name):path.endsWith('/attach')?await platforms.attach(user.id,data.id,data.botId):await platforms.create(user.id,data.name);
+        const result=path.endsWith('/rename')?await platforms.rename(user.id,data.id,data.name):await platforms.create(user.id,data.name);
         if(result.error){const messages={invalid:'請確認平台名稱及 Bot。',unavailable:'找不到可操作的平台或 Bot，或此平台已有 Bot。',bot_in_use:'此 Bot 已屬於其他平台。'};send(res,result.error==='invalid'?400:409,{error:messages[result.error]});}
         else send(res,200,result);
         return true;

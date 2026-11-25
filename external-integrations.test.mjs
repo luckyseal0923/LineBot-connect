@@ -115,7 +115,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const service = await (await portal('a','/independent-api/platforms',{name:'課程平台'})).json();
     assert.ok(service.id);
     assert.equal((await portal('b','/independent-api/platforms/rename',{id:service.id,name:'跨帳號'})).status, 409);
-    assert.equal((await portal('a','/independent-api/platforms/attach',{id:service.id,botId:alice.botId})).status, 200);
+    assert.equal((await createPlatformServices({db}).attach(alice.id,service.id,alice.botId)).id, service.id);
     assert.equal((await (await portal('a','/independent-api/platforms')).json()).platforms[0].name,'課程平台');
     assert.equal((await portal('x')).status, 401);
     assert.equal((await portal('p')).status, 403);
@@ -151,7 +151,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await portal('x', scopedWebhook)).status, 401);
     assert.ok(!(await (await portal('b', scopedWebhook)).text()).includes(privateWebhookUrl));
     const otherPlatform=await (await portal('a','/independent-api/platforms',{name:'教具平台'})).json();
-    assert.equal((await portal('a','/independent-api/platforms/attach',{id:otherPlatform.id,botId:secondBot})).status,200);
+    assert.equal((await createPlatformServices({db}).attach(alice.id,otherPlatform.id,secondBot)).id, otherPlatform.id);
 
     const setupPath = '/independent-api/platforms/line-setup';
     const setupA = setupPath + '?platform=' + service.id;

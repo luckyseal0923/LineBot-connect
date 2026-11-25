@@ -74,9 +74,9 @@ function platformName(platform) {
   return platform.name || '平台名稱待補';
 }
 
-async function api(path, { data, signal, unscoped = false } = {}) {
+async function api(path, { data, signal } = {}) {
   const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?|platforms\/line-setup)(?:\?|$)/.test(path);
-  if (currentPlatform && scoped && !unscoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
+  if (currentPlatform && scoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   const response = await fetch('/independent-api/' + path, {
     method: data === undefined ? 'GET' : 'POST',
     headers: data === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -534,7 +534,7 @@ async function renderPlatforms(signal) {
   const createFeedback = form.querySelector('.feedback');
   let savingSettings = false;
 
-  function platformCard(platform, unlinkedBots) {
+  function platformCard(platform) {
     const connection = !platform.botId ? 'missing' : platform.botEnabled ? 'ready' : 'off';
     const [label, tone] = connection === 'ready' ? ['Bot 已啟用', 'success']
       : connection === 'missing' ? ['尚未連結 Bot', 'warning'] : ['Bot 已停用', 'neutral'];
@@ -544,18 +544,13 @@ async function renderPlatforms(signal) {
       <div class="button-row">
         ${buttonLink('進入平台', platformLink('overview', platform), 'secondary')}
         ${platform.botId ? buttonLink('事件串接', platformLink('integrations', platform), 'quiet')
-          : buttonLink('設定 LINE Bot', platformLink('bot?setup=1', platform), 'quiet')}
+          : buttonLink('設定 LINE Bot', platformLink('bot', platform), 'quiet')}
       </div>
       <details class="card-settings"><summary>平台設定</summary>
         <form class="form-stack platform-form" data-platform-action="rename">
           <label>平台名稱<input name="name" required maxlength="80" value="${escapeHtml(platform.name)}" placeholder="請填寫平台名稱"></label>
           <button class="button button-secondary" type="submit">儲存名稱</button>
         </form>
-        ${!platform.botId && unlinkedBots.length ? `<form class="form-stack platform-form" data-platform-action="attach">
-          <label>連結既有 LINE Bot<select name="botId" required>${option('', '選擇尚未連結的 Bot')}
-            ${unlinkedBots.map(bot => option(bot.id, bot.name)).join('')}</select></label>
-          <button class="button button-secondary" type="submit">連結 Bot</button>
-        </form>` : ''}
         <p class="feedback" data-platform-status role="status"></p>
       </details>
     </article>`;
@@ -563,15 +558,9 @@ async function renderPlatforms(signal) {
 
   async function load(focusId) {
     const { platforms } = await api('platforms', { signal });
-    let unlinkedBots = [];
-    if (platforms.some(platform => !platform.botId)) {
-      const data = await api('bots', { signal, unscoped: true }).catch(() => null);
-      const linked = new Set(platforms.map(platform => platform.botId));
-      unlinkedBots = (data?.bots || []).filter(bot => !linked.has(bot.id));
-    }
     if (signal.aborted) return;
     list.innerHTML = platforms.length
-      ? `<div class="platform-grid">${platforms.map(platform => platformCard(platform, unlinkedBots)).join('')}</div>`
+      ? `<div class="platform-grid">${platforms.map(platformCard).join('')}</div>`
       : emptyState('尚未建立數位平台', '用右上角的「新增數位平台」開始設定通知。');
     if (focusId) {
       const card = [...list.querySelectorAll('.platform-card')].find(card => card.dataset.platformId === focusId);
@@ -615,11 +604,10 @@ async function renderPlatforms(signal) {
     const button = settings.querySelector('button');
     const feedback = card.querySelector('[data-platform-status]');
     savingSettings = button.disabled = true;
-    const action = settings.dataset.platformAction;
-    const success = action === 'rename' ? '平台名稱已儲存。' : 'LINE Bot 已連結。';
+    const success = '平台名稱已儲存。';
     try {
       const data = { id: platformId, ...Object.fromEntries(new FormData(settings)) };
-      await api('platforms/' + action, { data, signal });
+      await api('platforms/rename', { data, signal });
       if (signal.aborted) return;
       report(status, success, 'success');
       try { await load(platformId); }
@@ -846,6 +834,9 @@ async function renderLineSetup(signal) {
   if (signal.aborted) return;
   const { lineSetupRegions, lineSetupIndustries } = catalog;
   const region = details.region || '台灣';
+  const profileUrl = new URL(platformLink('bot?setup=profile', currentPlatform), location.href);
+  const guideUrl = new URL('/line-bot-setup.md', location.origin);
+  const setupPrompt = `請依照 ${guideUrl.href} 的開設步驟，使用 Computer Use 開啟 ${profileUrl.href}，讀取這個平台已儲存的開設資料。請協助我申請 LINE 官方帳號、啟用 Messaging API、連上這個平台並驗證 Webhook。登入與身分驗證由我操作。請將憑證直接填入接線站，回報驗證結果即可。`;
   panel.innerHTML = `<form id="line-setup-form" class="form-stack">
     <div class="line-setup-fields">
       <label>LINE 機器人名稱
@@ -879,7 +870,13 @@ async function renderLineSetup(signal) {
     </div>
     <div class="button-row"><button type="submit" class="button button-primary">儲存開設資料</button></div>
     <p class="feedback" role="status"></p>
-  </form>`;
+  </form>
+  <section class="ai-setup-handoff" aria-labelledby="ai-handoff-title" ${details.providerName ? '' : 'hidden'}>
+    <h2 id="ai-handoff-title">交給 AI 繼續設定</h2>
+    <p>複製下方指令，貼給可以操作瀏覽器的 AI。它會開啟這個平台的資料，並在需要登入 LINE 時請你接手。</p>
+    ${copyField('line-setup-prompt', '給 AI 的指令', setupPrompt, '複製指令')}
+  </section>`;
+  bindCopyFields(panel);
   const form = panel.querySelector('form');
   const button = form.querySelector('button');
   const feedback = form.querySelector('.feedback');
@@ -904,7 +901,8 @@ async function renderLineSetup(signal) {
       const { lineSetup } = await api(endpoint, { data: Object.fromEntries(new FormData(form)), signal });
       if (signal.aborted) return;
       for (const field of form.querySelectorAll('input, select, textarea')) field.value = lineSetup[field.name] || '';
-      report(feedback, '已儲存開設資料。', 'success');
+      panel.querySelector('.ai-setup-handoff').hidden = false;
+      report(feedback, '已儲存開設資料。接下來可複製下方指令給 AI。', 'success');
     } catch (error) {
       if (!signal.aborted) report(feedback, error.message, 'danger');
     } finally {
@@ -921,7 +919,7 @@ async function renderBots(params, signal) {
     return;
   }
   view.innerHTML = pageHeading('LINE Bot 設定', '設定這個平台的 LINE 官方帳號與 Webhook。',
-    buttonLink('LINE 開設資料', '#bot?setup=profile', 'secondary')) +
+    currentPlatform.botId ? buttonLink('LINE 開設資料', '#bot?setup=profile', 'secondary') : '') +
     '<div id="bot-list"><p class="page-loading" role="status">正在載入 LINE Bot…</p></div>';
 
   const list = view.querySelector('#bot-list');
@@ -935,9 +933,20 @@ async function renderBots(params, signal) {
   }
   if (signal.aborted) return;
   if (!bot) {
-    list.innerHTML = `<section class="panel">${emptyState('尚未連結 LINE Bot',
-      '請準備 LINE 官方帳號的 Channel access token 與 Channel secret。',
-      `<div class="button-row">${buttonLink('開始設定', '#bot?setup=1')}${buttonLink('連結既有 Bot', '#platforms', 'quiet')}</div>`)}</section>`;
+    list.innerHTML = `<div class="bot-setup-paths">
+      <section class="panel bot-setup-path">
+        <h2>手動設置機器人</h2>
+        <p>熟悉 LINE 官方帳號、Messaging API 和 Webhook 設定的開發者，可直接從憑證開始。</p>
+        <ol><li>自行開設官方帳號並啟用 Messaging API。</li><li>在接線站填入 Channel access token 和 Channel secret。</li><li>將接線站提供的 Webhook 網址填回 LINE 並完成驗證。</li></ol>
+        ${buttonLink('開始手動設定', '#bot?setup=1', 'secondary')}
+      </section>
+      <section class="panel bot-setup-path assisted">
+        <h2>AI 協助申請與設定</h2>
+        <p>第一次開設 LINE 機器人，可以請支援瀏覽器操作（Computer Use）的 AI 帶你完成。</p>
+        <ol><li>先在接線站填寫開設資料。</li><li>將指令貼給 AI，並在 LINE 頁面親自登入。</li><li>AI 依資料協助開辦帳號、連上接線站並驗證 Webhook。</li></ol>
+        ${buttonLink('填寫開設資料', '#bot?setup=profile')}
+      </section>
+    </div>`;
     return;
   }
   const requestedBot = params.get('bot');
