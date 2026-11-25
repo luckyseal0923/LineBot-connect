@@ -185,7 +185,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
 
         const failures = {
           invalid: [400, '請確認名稱、收件對象或測試資料。'],
-          unavailable: [404, '找不到可操作的串接，請確認金鑰與收件對象。'],
+          unavailable: [404, '找不到可操作的串接，請確認事件狀態與收件對象。'],
           disabled: [403, '請先啟用串接。'],
           target_unavailable: [422, '請選擇自己的啟用中 Bot 與已配對收件人。'],
           event_conflict: [409, '此測試編號已有其他通知。'],
@@ -194,7 +194,11 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (result.error) {
           const [status, error] = failures[result.error];
           send(res, status, { error });
-        } else send(res, action ? 200 : 201, result.apiKey ? withEventWebhook(result) : result);
+        } else {
+          const payload = result.webhookToken ? withEventWebhook(result) : result;
+          const urlOnly = result.webhookToken && requestUrl.searchParams.get('webhooks') === '1';
+          send(res, action ? 200 : 201, urlOnly ? { id: result.id, privateWebhookUrl: payload.privateWebhookUrl } : payload);
+        }
         return true;
       }
       if(path.startsWith('/independent-api/notification') || path.startsWith('/independent-api/recipient')) {

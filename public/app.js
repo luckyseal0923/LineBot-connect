@@ -1421,16 +1421,10 @@ async function renderIntegrations(signal) {
     secret.hidden = true;
   }
 
-  function showWebhook({ apiKey, webhookUrl, privateWebhookUrl }) {
+  function showWebhook(privateWebhookUrl) {
     secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">Webhook 串接設定</h2>
         <button class="button button-quiet" type="button" data-hide-key>關閉</button></div>
-      ${webhookSettings('new-webhook', privateWebhookUrl)}
-      <details class="action-menu integration-webhook">
-        <summary>標頭驗證（選用）</summary>
-        ${copyField('header-webhook-url', '標頭驗證網址（POST）', webhookUrl, '複製網址')}
-        ${copyField('integration-key', '串接金鑰（僅顯示一次）', apiKey, '複製金鑰')}
-      </details>`;
-    secret.querySelector('#integration-key').autocomplete = 'off';
+      ${webhookSettings('new-webhook', privateWebhookUrl)}`;
     secret.hidden = false;
     bindCopyFields(secret);
     secret.querySelector('[data-hide-key]').addEventListener('click', () => {
@@ -1454,9 +1448,9 @@ async function renderIntegrations(signal) {
     button.disabled = true;
     report(feedback, '正在處理…');
     try {
-      const result = await api(route, { data, signal });
+      const result = await api(route + '?webhooks=1', { data, signal });
       if (signal.aborted) return;
-      if (result.privateWebhookUrl) showWebhook(result);
+      if (result.privateWebhookUrl) showWebhook(result.privateWebhookUrl);
       after?.(result);
       report(feedback, success, 'success');
       try { await refreshList(); }
@@ -1495,9 +1489,9 @@ async function renderIntegrations(signal) {
     const confirmation = {
       test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
-      rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發會讓舊網址與舊金鑰失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
-      delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel || '待設定'}）？刪除後無法復原，原 Webhook 網址與金鑰會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],
-      revoke: ['撤銷 Webhook', '撤銷會讓這個事件的網址與金鑰失效。', '確認撤銷', 'danger']
+      rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發後，原有串接將失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
+      delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel || '待設定'}）？刪除後無法復原，原有串接也會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],
+      revoke: ['撤銷 Webhook', '撤銷後，數位平台將無法透過原有串接觸發這個事件。', '確認撤銷', 'danger']
     };
     if (confirmation[action]) {
       const [title, description, label, style] = confirmation[action];
