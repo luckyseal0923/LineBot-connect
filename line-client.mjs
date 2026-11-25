@@ -7,7 +7,8 @@ export function createLineBotLookup({ fetchImpl = fetch } = {}) {
   if(!response.ok)return null;
   let info;try{info=await response.json();}catch{return null;}
   if(typeof info.userId!=='string'||!/^U[0-9a-f]{32}$/.test(info.userId)||typeof info.displayName!=='string'||info.displayName.length<1||info.displayName.length>200)return null;
-  return {userId:info.userId,displayName:info.displayName};
+  const basicId = typeof info.basicId === 'string' && info.basicId.startsWith('@') ? info.basicId : null;
+  return {userId:info.userId,displayName:info.displayName,...(basicId && {basicId})};
  };
 }
 

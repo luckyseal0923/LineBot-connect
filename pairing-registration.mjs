@@ -1,4 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import QRCode from 'qrcode';
+import { createLineBotLookup } from './line-client.mjs';
 import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 
 const ticketPattern = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/;
@@ -10,14 +12,27 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
   const origin = new URL(publicOrigin).origin;
   const mac = value => createHmac('sha256', key).update(value).digest('base64url');
   const codeHash = (bot,code) => mac('pair-code:v1:'+bot+':'+code);
+  const lookupBot = createLineBotLookup({fetchImpl});
   async function issue(account,bot) {
+    const {rows:[target]} = await db.query(`select b.bot_user_id,b.encrypted_access_token
+      from linebot_private.bot_credentials b ${activeBot}
+      where b.account_id=$1 and b.id=$2 and b.enabled`,[account,bot]);
+    if (!target) return null;
+    const info = await lookupBot(tokenVault.open(account,target.encrypted_access_token));
     for (let attempt=0; attempt<5; attempt++) {
       const code=String(randomInt(1000000)).padStart(6,'0');
       const result=await db.query(`insert into linebot_private.pairing_codes(account_id,bot_id,code_hash,expires_at)
         select b.account_id,b.id,$3,now()+interval '10 minutes' from linebot_private.bot_credentials b ${activeBot}
         where b.id=$2 and b.account_id=$1 and b.enabled on conflict(code_hash) do nothing returning expires_at`,
         [account,bot,codeHash(bot,code)]);
-      if (result.rows.length) return {message:code,expiresMinutes:10,expiresAt:result.rows[0].expires_at};
+      if (result.rows.length) {
+        const invitation = {message:code,expiresMinutes:10,expiresAt:result.rows[0].expires_at};
+        if (info?.basicId && info.userId === target.bot_user_id) {
+          const chatUrl = `https://line.me/R/oaMessage/${encodeURIComponent(info.basicId)}/?${encodeURIComponent(code)}`;
+          invitation.chatQr = await QRCode.toDataURL(chatUrl,{width:260,margin:4});
+        }
+        return invitation;
+      }
     }
     return null;
   }

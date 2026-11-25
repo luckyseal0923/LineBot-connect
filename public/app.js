@@ -1129,9 +1129,9 @@ async function renderRecipients(signal) {
     <div id="invite-bot-id" class="spaced"></div>
     <div class="bot-setup-paths spaced">
       <section class="panel"><h3>使用一次性配對碼</h3>
-      <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送 6 位數配對碼，再點「填寫資料」完成登記。</p>
+      <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，掃描配對 QR Code 開啟一對一聊天室，送出配對碼，再點「填寫資料」。</p>
       <form id="pair-form" class="form-stack">
-        <button class="button button-primary" type="submit">產生配對碼</button>
+        <button class="button button-primary" type="submit">產生配對 QR Code</button>
         <p id="pair-result" class="feedback" role="status"></p>
       </form>
       <div id="pair-preview" class="detail-block" hidden></div>
@@ -1285,7 +1285,11 @@ async function renderRecipients(signal) {
       clearInterval(expiryTimer);
       preview.hidden = false;
       preview.innerHTML = `<h3 tabindex="-1">交給收件者的配對碼</h3>
-        <p class="muted small">請對方將這 6 位數字傳給「${escapeHtml(platform.botName)}」。此碼限一人配對。</p>
+        ${result.chatQr ? `<div id="pair-chat-qr">
+          <img class="invite-qr" width="230" height="230" alt="開啟 ${escapeHtml(platform.botName)} 聊天室並帶入配對碼的 QR Code" src="${escapeHtml(result.chatQr)}">
+          <p>用手機掃碼後，在「${escapeHtml(platform.botName)}」聊天室按「送出」，再點 Bot 回覆的「填寫資料」。</p>
+        </div>` : '<p class="muted small">暫時無法取得聊天室 QR Code，請複製下方配對碼，在 Bot 的一對一聊天室送出。</p>'}
+        <p class="muted small">每組限一人配對，也可以手動輸入以下數字。</p>
         ${copyField('pair-code', '6 位數配對碼', result.message, '複製配對碼')}
         <p class="expiry-note">到期時間 ${dateTime(expiry)} <span id="pair-countdown"></span></p>
         <button class="button button-secondary" type="button" id="check-pairing">查詢配對結果</button>`;
@@ -1298,7 +1302,10 @@ async function renderRecipients(signal) {
         const minutes = Math.floor(seconds / 60);
         countdown.textContent = seconds ? `（剩 ${minutes}:${String(seconds % 60).padStart(2, '0')}）` : '（已到期）';
         copyButton.disabled = !seconds;
-        if (!seconds) clearInterval(expiryTimer);
+        if (!seconds) {
+          preview.querySelector('#pair-chat-qr')?.remove();
+          clearInterval(expiryTimer);
+        }
       }
       expiryTimer = setInterval(updateExpiry, 1000);
       updateExpiry();
