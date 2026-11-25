@@ -555,7 +555,9 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 #integration-list { display: grid; gap: .85rem; }
 .integration-item .section-heading { align-items: start; margin-bottom: .5rem; }
 .integration-item h2 { overflow-wrap: anywhere; }
-.event-meta { display: grid; grid-template-columns: auto 1fr; gap: .2rem .9rem; margin: 0 0 .85rem; }
+.event-card-body { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1.25rem; }
+.event-card-body > .button-row { flex: 0 1 auto; justify-content: flex-end; }
+.event-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); min-width: 0; gap: .2rem .9rem; margin: 0; }
 .event-meta dt { color: var(--muted); }
 .event-meta dd { margin: 0; overflow-wrap: anywhere; }
 .event-editor { max-width: 36rem; margin: .85rem 0; }

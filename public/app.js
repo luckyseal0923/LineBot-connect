@@ -1419,10 +1419,12 @@ async function renderIntegrations(signal) {
           </div>
         </div>
         ${!item.eventName ? '<p class="muted small">沿用舊名稱，可在管理事件中重新命名。</p>' : ''}
-        <dl class="event-meta"><dt>Webhook 代號</dt><dd>${escapeHtml(webhookCode(item))}</dd>
-          <dt>收件者</dt><dd>${escapeHtml(item.recipientLabel || '待設定')}${assigned ? `（${item.recipients.length} 人）` : ''}</dd></dl>
-        <div class="button-row">${assigned ? copy + recipientButton : recipientButton + copy}
-          ${assigned ? action('test','發送測試', !ready, 'quiet') : ''}</div>
+        <div class="event-card-body">
+          <dl class="event-meta"><dt>Webhook 代號</dt><dd>${escapeHtml(webhookCode(item))}</dd>
+            <dt>收件者</dt><dd>${escapeHtml(item.recipientLabel || '待設定')}${assigned ? `（${item.recipients.length} 人）` : ''}</dd></dl>
+          <div class="button-row">${assigned ? copy + recipientButton : recipientButton + copy}
+            ${assigned ? action('test','發送測試', !ready, 'quiet') : ''}</div>
+        </div>
         <form id="people-${item.id}" data-editor="recipients" class="form-stack event-editor"${item.id === openEventId ? '' : ' hidden'}>
           ${recipientFields(item)}<button class="button button-primary" type="submit">儲存收件者</button>
         </form>
