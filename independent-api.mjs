@@ -207,6 +207,20 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user),requestedPlatform && requestUrl.searchParams.get("details")==="1")});return true;}
         if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id,await platformBot(user))});return true;}
+        if (path === '/independent-api/recipient/pair-status' && req.method === 'GET') {
+          const invitationId = requestUrl.searchParams.get('invitation');
+          if (!botIdPattern.test(requestedPlatform || '') || !botIdPattern.test(invitationId || '')) {
+            send(res, 400, { error: '請選擇平台及有效的配對邀請。' });
+            return true;
+          }
+          if (!notifications.registration) {
+            send(res, 503, { error: '目前無法查詢配對進度。' });
+            return true;
+          }
+          const result = await notifications.registration.status(user.id, requestedPlatform, invitationId);
+          send(res, result ? 200 : 404, result || { error: '找不到這筆邀請，請在目前平台重新產生配對碼。' });
+          return true;
+        }
         if(path==='/independent-api/recipient/edit' && req.method==='POST'){
           const bot=await platformBot(user);
           if(!bot){send(res,400,{error:'請先選擇要編輯的平台。'});return true;}

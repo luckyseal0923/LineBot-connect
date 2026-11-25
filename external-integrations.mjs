@@ -33,10 +33,11 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   async function list(accountId, botId = null, includeWebhook = false, platformId = null) {
     const { rows } = await db.query(`select i.id,i.name,i.webhook_number::text as "webhookNumber",i.enabled,i.key_tail as "keyTail",case when $3 then i.key_hash end as "keyHash",
       i.recipient_id as "recipientId",b.id as "botId",b.bot_name as "botName",i.event_name as "eventName",
-      targets.people as recipients,targets.ready as "targetReady",i.created_at as "createdAt"
+      targets.people as recipients,targets.active_count>0 as "targetReady",i.created_at as "createdAt",
+      case when i.enabled and i.key_hash is not null then targets.active_count else 0 end as "notifiableCount"
       from linebot_private.integrations i ${eventBotJoins}
       cross join lateral (select coalesce(jsonb_agg(jsonb_build_object('id',r.id,'label',r.label,'active',r.active)
-        order by r.label,r.id),'[]') as people,coalesce(bool_or(r.active and b.enabled),false) as ready
+        order by r.label,r.id),'[]') as people,(count(*) filter (where r.active and b.enabled))::int as active_count
         from linebot_private.recipients r where r.account_id=i.account_id and r.bot_id=b.id and r.id=any(${assigned})) targets
       where i.deleted_at is null and i.account_id=$1 and ($2::uuid is null or i.platform_id=$4::uuid or (b.id=$2 and (i.platform_id is null or $4 is null)))
       order by i.created_at desc,i.id`,[accountId,botId,includeWebhook,platformId]);

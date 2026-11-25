@@ -357,11 +357,18 @@ function renderHistory(target, records, limit = records.length) {
   }).join('')}</ul>`;
 }
 
-function integrationStatus(item) {
+function notifiableCount(item) {
+  // Older server instances may still return the previous response during deployment.
+  return item.notifiableCount ?? (item.enabled && item.keyTail && item.targetReady
+    ? item.recipients.filter(person => person.active).length : 0);
+}
+
+function integrationStatus(item, count = notifiableCount(item)) {
   if (!item.keyTail) return ['Webhook 已撤銷', 'neutral'];
   if (!item.enabled) return ['已停用', 'neutral'];
   if (!item.recipients.length) return ['收件者待設定', 'warning'];
-  return item.targetReady ? ['啟用中', 'success'] : ['收件者或 Bot 無法使用', 'warning'];
+  if (!count) return ['收件者或 Bot 無法使用', 'warning'];
+  return count < item.recipients.length ? ['部分可通知', 'warning'] : ['啟用中', 'success'];
 }
 
 function webhookCode(item) {
@@ -393,7 +400,7 @@ async function renderOverview(signal) {
 
   const recipients = recipientResult.value?.recipients;
   const integrations = integrationResult.value?.integrations;
-  const liveCount = integrations?.filter(item => integrationStatus(item)[1] === 'success').length;
+  const liveCount = integrations?.filter(item => notifiableCount(item) > 0).length;
   const summaryCard = (label, content, hash) => `<a class="summary-card" href="${escapeHtml(workspaceLink(hash))}">
     <span>${label}</span>${content}</a>`;
   view.querySelector('#overview-summary').innerHTML =
@@ -431,8 +438,9 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     for (const person of item.recipients) {
       people.set(person.id, {label:person.label,paired:person.active,assigned:true});
     }
-    const [label, tone] = integrationStatus(item);
-    return { item, label, tone, ready: tone === 'success' };
+    const count = notifiableCount(item);
+    const [label, tone] = integrationStatus(item, count);
+    return { item, label, tone, count, ready: count > 0 };
   });
   const pending = (label, hash) => `<a class="route-node route-pending" href="${escapeHtml(workspaceLink(hash))}">${label}</a>`;
   const unavailable = label => `<div class="route-node">${label}暫時無法載入</div>`;
@@ -461,7 +469,7 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
         ${!recipients ? unavailable('收件名單') : !people.size ? pending('收件者待設定', '#recipients') : ''}
       </div>
     </div>
-    ${routes.some(route => !route.ready) ? '<p class="route-legend small"><span>可發送</span><span class="unavailable">暫無法發送</span></p>' : ''}
+    ${routes.some(({ item, count }) => !count || count < item.recipients.length) ? '<p class="route-legend small"><span>可發送</span><span class="unavailable">暫無法發送</span></p>' : ''}
     <p class="route-description" aria-live="polite"></p>
   </div>`;
 
@@ -512,7 +520,7 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     const route = routes[selected];
     sources.forEach((node, key) => node.setAttribute('aria-pressed', String(key === selected)));
     for (const [id, node] of personNodes) node.classList.toggle('is-highlighted', Boolean(route?.item.recipients.some(person=>person.id===id)));
-    description.textContent = route ? `${integrationName(route.item)} → ${webhookCode(route.item)} → ${route.item.recipientLabel || '收件者待設定'}（${route.label}）` : '';
+    description.textContent = route ? `${integrationName(route.item)} → ${webhookCode(route.item)} → ${route.item.recipientLabel || '收件者待設定'}（可通知 ${route.count}／${route.item.recipients.length} 人）` : '';
     draw();
   }
   for (const nodes of [sources, buttons]) {
@@ -1006,16 +1014,19 @@ function option(value, label) {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
 }
 
-function showPageError(target, message) {
+function showPageError(target, message, retry = () => render()) {
   target.innerHTML = emptyState('暫時無法載入', escapeHtml(message),
     '<button type="button" class="button button-secondary" data-retry>重新查詢</button>');
-  target.querySelector('[data-retry]').addEventListener('click', () => render());
+  target.querySelector('[data-retry]').addEventListener('click', () => retry());
 }
 
 async function renderRecipientInvite(panel, signal) {
   let config;
   try { config = await api('recipient/invite',{signal}); }
-  catch(error) { if(!signal.aborted) showPageError(panel,error.message); return; }
+  catch(error) {
+    if (!signal.aborted) showPageError(panel, error.message, () => renderRecipientInvite(panel, signal));
+    return;
+  }
   if(signal.aborted) return;
   const pageUrl=new URL(platformLink('recipients?setup=login-ai',currentPlatform),location.href);
   const skillUrl=new URL('/line-login-setup.md',location.origin);
@@ -1028,7 +1039,7 @@ async function renderRecipientInvite(panel, signal) {
     bindCopyFields(idBox);
     panel.innerHTML = `      ${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
       <img class="invite-qr" width="230" height="230" alt="收件者登記 QR Code" src="${escapeHtml(config.qr)}">
-      ${copyField('invite-url','收件者邀請連結',config.url,'複製連結')}` : '<p>首次使用請先設定此 Bot 的 LINE 登入，完成後即可分享 QR Code。</p>'}
+      ${copyField('invite-url','收件者登記連結',config.url,'複製登記連結')}` : '<p>先設定 LINE 登入頁，完成後就能分享登記連結或 QR Code。</p>'}
       <details class="help-block"><summary>手動設定 LINE 登入頁</summary>
         <p>熟悉 LINE Developers 的開發者可依下列步驟建立登入頁。</p>
         <ol class="instructions">
@@ -1106,9 +1117,98 @@ function recipientFields() {
     <input name="${key}" maxlength="${max}" type="${key === 'email' ? 'email' : 'text'}" ${key === 'label' ? 'required' : ''}></label>`).join('');
 }
 
+const pairingStates = {
+  waiting: ['等待送出配對碼', 'neutral', '配對碼有效至'],
+  claimed: ['已配對，等待填表', 'warning', '填表期限'],
+  completed: ['已加入收件名單', 'success'],
+  code_expired: ['配對碼已過期', 'warning'],
+  form_expired: ['填表時間已到期', 'warning'],
+  cancelled: ['邀請已取消', 'warning'],
+  paused: ['Bot 已停用，邀請暫停', 'warning']
+};
+
+function trackPairing(preview, invitation, signal, onComplete) {
+  const share = preview.querySelector('[data-pair-share]');
+  const status = preview.querySelector('#pair-progress');
+  const expiryNote = preview.querySelector('#pair-expiry');
+  const feedback = preview.querySelector('#pair-check-feedback');
+  const button = preview.querySelector('#check-pairing');
+  const invitations = preview.closest('#recipient-invitations');
+  let state = 'waiting';
+  const initialExpiry = Date.parse(invitation.expiresAt);
+  let expiry = Number.isFinite(initialExpiry) ? initialExpiry : Date.now() + invitation.expiresMinutes * 60_000;
+  let clock, poll;
+
+  function drawStatus() {
+    const [label, tone] = pairingStates[state];
+    status.innerHTML = `<strong>邀請進度</strong> ${chip(label, tone)}`;
+  }
+
+  function updateExpiry() {
+    const deadlineLabel = pairingStates[state][2];
+    const seconds = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+    share.hidden = state !== 'waiting' || !seconds;
+    expiryNote.hidden = !deadlineLabel;
+    if (deadlineLabel) {
+      const remaining = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+      expiryNote.textContent = `${deadlineLabel} ${dateTime(expiry)}（${seconds ? '剩 ' + remaining : '已到期'}）`;
+    }
+  }
+
+  function stopTimers() {
+    clearInterval(clock);
+    clearInterval(poll);
+  }
+
+  async function check() {
+    if (button.disabled || signal.aborted) return;
+    button.disabled = true;
+    try {
+      const next = await api('recipient/pair-status?invitation=' + encodeURIComponent(invitation.invitationId), {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      });
+      if (signal.aborted) return;
+      report(feedback, '');
+      expiry = Date.parse(next.expiresAt);
+      if (state !== next.status) {
+        state = next.status;
+        drawStatus();
+      }
+      updateExpiry();
+      if (state !== 'paused' && !pairingStates[state][2]) {
+        stopTimers();
+        button.hidden = true;
+        if (state === 'completed') onComplete();
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        report(feedback, error.name === 'TimeoutError' ? '查詢逾時，請稍後再試。' : error.message, 'warning');
+        if ([401, 403, 404].includes(error.status)) clearInterval(poll);
+      }
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  drawStatus();
+  updateExpiry();
+  clock = setInterval(updateExpiry, 1000);
+  if (invitation.invitationId) {
+    button.addEventListener('click', check);
+    poll = setInterval(() => {
+      if (!document.hidden && !invitations.hidden) check();
+    }, 5000);
+  } else {
+    button.hidden = true;
+    report(feedback, '這組邀請無法查詢進度。你仍可重新查詢收件名單。');
+  }
+  signal.addEventListener('abort', stopTimers, { once: true });
+}
+
 async function renderRecipients(signal) {
   const platform = currentPlatform;
-  view.innerHTML = pageHeading('收件對象', '管理這個平台已配對的 LINE 收件者。') +
+  const inviteAction = platform.botEnabled ? '<button class="button button-primary" type="button" id="open-recipient-invite" aria-controls="recipient-invitations" aria-expanded="false" disabled>邀請收件者</button>' : '';
+  view.innerHTML = pageHeading('收件對象', '管理這個平台的 LINE 收件者。', inviteAction) +
     '<div id="recipients-body"><p class="page-loading" role="status">正在載入收件對象…</p></div>';
   const body = view.querySelector('#recipients-body');
   if (!platform.botEnabled) {
@@ -1124,25 +1224,7 @@ async function renderRecipients(signal) {
     return;
   }
   if (signal.aborted) return;
-  body.innerHTML = `<section aria-labelledby="invite-title">
-    <h2 id="invite-title">邀請收件者</h2>
-    <div id="invite-bot-id" class="spaced"></div>
-    <div class="bot-setup-paths spaced">
-      <section class="panel"><h3>使用一次性配對碼</h3>
-      <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，掃描配對 QR Code 開啟一對一聊天室，送出配對碼，再點「填寫資料」。</p>
-      <form id="pair-form" class="form-stack">
-        <button class="button button-primary" type="submit">產生配對 QR Code</button>
-        <p id="pair-result" class="feedback" role="status"></p>
-      </form>
-      <div id="pair-preview" class="detail-block" hidden></div>
-      </section>
-      <section class="panel"><h3>製作 LINE 登入頁</h3>
-        <p class="muted">讓收件者掃碼登入 LINE，填寫收件資料加入名單。</p>
-        <div id="recipient-invite" class="spaced">載入邀請設定中…</div>
-      </section>
-    </div>
-  </section>
-  <div class="spaced">
+  body.innerHTML = `
     <section class="panel" aria-labelledby="paired-title">
       <div class="section-heading"><h2 id="paired-title">收件名單</h2>
         <button id="refresh-recipients" class="button button-quiet" type="button">重新查詢</button>
@@ -1158,15 +1240,59 @@ async function renderRecipients(signal) {
         </form>
       </dialog>
     </section>
-  </div>`;
+    <section class="section-gap" id="recipient-invitations" aria-labelledby="invite-title" hidden>
+      <div class="section-heading">
+        <h2 id="invite-title" tabindex="-1">邀請收件者</h2>
+        <button class="button button-quiet" type="button" id="close-recipient-invite">收起邀請</button>
+      </div>
+      <div id="invite-bot-id"></div>
+      <div class="bot-setup-paths spaced">
+        <section class="panel">
+          <h3>邀請一位</h3>
+          <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，開啟一對一聊天室並送出一次性配對碼，再點「填寫資料」。</p>
+          <form id="pair-form" class="form-stack">
+            <button class="button button-primary" type="submit">產生配對 QR Code</button>
+            <p id="pair-result" class="feedback" role="status"></p>
+          </form>
+          <div id="pair-preview" class="detail-block" hidden></div>
+        </section>
+        <section class="panel">
+          <h3>邀請多人自行登記</h3>
+          <p class="muted">分享同一個登記入口，讓收件者登入 LINE 並填寫資料。</p>
+          <div id="recipient-invite" class="spaced"><p class="muted" role="status">載入邀請設定中…</p></div>
+        </section>
+      </div>
+    </section>`;
 
-  renderRecipientInvite(body.querySelector('#recipient-invite'), signal);
+  const invitations = body.querySelector('#recipient-invitations');
+  const inviteButton = view.querySelector('#open-recipient-invite');
+  const closeInvites = body.querySelector('#close-recipient-invite');
+  const inviteTitle = body.querySelector('#invite-title');
+  let inviteSettingsLoaded = false;
+  function setInvitationsOpen(open) {
+    invitations.hidden = !open;
+    inviteButton.setAttribute('aria-expanded', String(open));
+    if (open && !inviteSettingsLoaded) {
+      inviteSettingsLoaded = true;
+      renderRecipientInvite(body.querySelector('#recipient-invite'), signal);
+    }
+  }
+  inviteButton.disabled = false;
+  inviteButton.addEventListener('click', () => {
+    setInvitationsOpen(true);
+    inviteTitle.focus();
+  });
+  closeInvites.addEventListener('click', () => {
+    setInvitationsOpen(false);
+    inviteButton.focus();
+  });
+  setInvitationsOpen(!recipients.length || route().params.get('setup') === 'login-ai');
   const form = body.querySelector('#pair-form');
   const list = body.querySelector('#recipients-list');
   const refresh = body.querySelector('#refresh-recipients');
   const feedback = body.querySelector('#recipient-feedback');
   const preview = body.querySelector('#pair-preview');
-  let expiryTimer;
+  let pairingController;
 
   const dialog = body.querySelector('#edit-recipient');
   const editForm = dialog.querySelector('form');
@@ -1195,7 +1321,7 @@ async function renderRecipients(signal) {
 
   function drawList(items) {
     if (!items.length) {
-      list.innerHTML = emptyState('尚無收件對象', '對方透過配對碼或掃碼填完資料後，按「重新查詢」即可查看。');
+      list.innerHTML = emptyState('尚無收件對象', '收件者填完登記資料後，就會出現在這裡。');
       return;
     }
     list.innerHTML = `<div class="table-wrap"><table class="data-table" aria-label="平台收件名單">
@@ -1252,24 +1378,26 @@ async function renderRecipients(signal) {
     }
   }
 
+  let listRequest = 0;
   async function loadList(message = '已更新收件對象。') {
+    const request = ++listRequest;
     refresh.disabled = true;
-    report(feedback, '正在查詢配對結果…');
+    report(feedback, '正在更新收件名單…');
     try {
       const data = await api('recipients?details=1', { signal });
-      if (signal.aborted) return;
+      if (signal.aborted || request !== listRequest) return;
       drawList(data.recipients);
       report(feedback, message, 'success');
     } catch (error) {
-      if (!signal.aborted) report(feedback, error.message, 'danger');
+      if (!signal.aborted && request === listRequest) report(feedback, error.message, 'danger');
     } finally {
-      refresh.disabled = false;
+      if (request === listRequest) refresh.disabled = false;
     }
   }
 
   drawList(recipients);
   refresh.addEventListener('click', () => loadList());
-  signal.addEventListener('abort', () => clearInterval(expiryTimer), { once: true });
+  signal.addEventListener('abort', () => pairingController?.abort(), { once: true });
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const submit = form.querySelector('button');
@@ -1280,40 +1408,28 @@ async function renderRecipients(signal) {
     try {
       const result = await api('recipient/pair', { data: { botId: platform.botId, selfRegistration: true }, signal });
       if (signal.aborted || !form.isConnected) return;
-      const expiresAt = Date.parse(result.expiresAt);
-      const expiry = Number.isFinite(expiresAt) ? expiresAt : Date.now() + (result.expiresMinutes || 10) * 60_000;
-      clearInterval(expiryTimer);
+      pairingController?.abort();
+      pairingController = new AbortController();
       preview.hidden = false;
-      preview.innerHTML = `<h3 tabindex="-1">交給收件者的配對碼</h3>
-        ${result.chatQr ? `<div id="pair-chat-qr">
-          <img class="invite-qr" width="230" height="230" alt="開啟 ${escapeHtml(platform.botName)} 聊天室並帶入配對碼的 QR Code" src="${escapeHtml(result.chatQr)}">
-          ${result.chatUrl ? copyField('pair-chat-link', '配對連結', result.chatUrl, '複製配對連結') : ''}
-          <p>請收件者掃碼或點開配對連結，在「${escapeHtml(platform.botName)}」聊天室直接按「送出」，再點 Bot 回覆的「填寫資料」。</p>
-        </div>` : '<p class="muted small">暫時無法取得聊天室 QR Code，請複製下方配對碼，在 Bot 的一對一聊天室送出。</p>'}
-        <p class="muted small">每組限一人配對，也可以手動輸入以下數字。</p>
-        ${copyField('pair-code', '6 位數配對碼', result.message, '複製配對碼')}
-        <p class="expiry-note">到期時間 ${dateTime(expiry)} <span id="pair-countdown"></span></p>
-        <button class="button button-secondary" type="button" id="check-pairing">查詢配對結果</button>`;
+      preview.innerHTML = `<h3 tabindex="-1">一次性配對邀請</h3>
+        <div data-pair-share>
+          ${result.chatQr ? `<img class="invite-qr" width="230" height="230" alt="開啟 ${escapeHtml(platform.botName)} 聊天室並帶入配對碼的 QR Code" src="${escapeHtml(result.chatQr)}">
+            ${result.chatUrl ? copyField('pair-chat-link', '配對連結', result.chatUrl, '複製配對連結') : ''}
+            <p>請收件者掃碼或點開配對連結，在「${escapeHtml(platform.botName)}」聊天室直接按「送出」，再點 Bot 回覆的「填寫資料」。</p>`
+            : '<p class="muted small">暫時無法取得聊天室 QR Code，請複製下方配對碼，在 Bot 的一對一聊天室送出。</p>'}
+          <p class="muted small">每組限一人配對，也可以手動輸入以下數字。</p>
+          ${copyField('pair-code', '6 位數配對碼', result.message, '複製配對碼')}
+        </div>
+        <p id="pair-progress" class="pair-progress" role="status"></p>
+        <p id="pair-expiry" class="expiry-note"></p>
+        <p id="pair-check-feedback" class="feedback" role="status"></p>
+        <button class="button button-secondary" type="button" id="check-pairing">更新邀請進度</button>`;
       bindCopyFields(preview);
-      preview.querySelector('#check-pairing').addEventListener('click', () => loadList());
-      const countdown = preview.querySelector('#pair-countdown');
-      const copyButton = preview.querySelector('[data-copy="pair-code"]');
-      function updateExpiry() {
-        const seconds = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
-        const minutes = Math.floor(seconds / 60);
-        countdown.textContent = seconds ? `（剩 ${minutes}:${String(seconds % 60).padStart(2, '0')}）` : '（已到期）';
-        copyButton.disabled = !seconds;
-        if (!seconds) {
-          preview.querySelector('#pair-chat-qr')?.remove();
-          clearInterval(expiryTimer);
-        }
-      }
-      expiryTimer = setInterval(updateExpiry, 1000);
-      updateExpiry();
+      trackPairing(preview, result, pairingController.signal, () => loadList('邀請已完成，收件名單已更新。'));
       preview.querySelector('h3').focus();
       report(resultText, '配對碼已產生。', 'success');
     } catch (error) {
-      report(resultText, error.message, 'danger');
+      if (!signal.aborted) report(resultText, error.message, 'danger');
     } finally {
       submit.disabled = false;
     }
@@ -1400,11 +1516,12 @@ async function renderIntegrations(signal) {
       return;
     }
     list.innerHTML = items.map(item => {
-      const status = integrationStatus(item);
+      const count = notifiableCount(item);
+      const status = integrationStatus(item, count);
       const action = (type, label, disabled = false, style = 'quiet') =>
         `<button type="button" class="button button-${style}" data-integration-action="${type}"${disabled ? ' disabled' : ''}>${label}</button>`;
       const assigned = item.recipients.length > 0;
-      const ready = status[1] === 'success';
+      const ready = count > 0;
       const copy = item.privateWebhookUrl ? action('copy', '複製 Webhook 網址', false, ready ? 'primary' : 'secondary') : '';
       const recipientButton = `<button type="button" class="button button-${assigned ? 'secondary' : 'primary'}"
         data-integration-action="recipients" aria-controls="people-${item.id}" aria-expanded="${item.id === openEventId}">${assigned ? '編輯' : '設定'}收件者</button>`;
@@ -1426,7 +1543,8 @@ async function renderIntegrations(signal) {
         ${!item.eventName ? '<p class="muted small">沿用舊名稱，可在管理事件中重新命名。</p>' : ''}
         <div class="event-card-body">
           <dl class="event-meta"><dt>Webhook 代號</dt><dd>${escapeHtml(webhookCode(item))}</dd>
-            <dt>收件者</dt><dd>${escapeHtml(item.recipientLabel || '待設定')}${assigned ? `（${item.recipients.length} 人）` : ''}</dd></dl>
+            <dt>收件者</dt><dd><strong>可通知 ${count}／${item.recipients.length} 人</strong>${assigned
+              ? ` <span class="muted small">· ${escapeHtml(item.recipientLabel)}</span>` : ''}</dd></dl>
           <div class="button-row">${assigned ? copy + recipientButton : recipientButton + copy}
             ${assigned ? action('test','發送測試', !ready, 'quiet') : ''}</div>
         </div>
@@ -1531,8 +1649,9 @@ async function renderIntegrations(signal) {
       }
       return;
     }
+    const activeLabels = item.recipients.filter(person => person.active).map(person => person.label).join('、');
     const confirmation = {
-      test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
+      test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${activeLabels}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
       rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發後，原有串接將失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
       delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel || '待設定'}）？刪除後無法復原，原有串接也會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],

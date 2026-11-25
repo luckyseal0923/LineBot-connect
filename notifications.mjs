@@ -17,7 +17,8 @@ export function createNotifications({db,recipientVault,tokenVault,key,allow,publ
   for(const event of events){
    const user=event?.source?.userId;
    if(event?.type==='unfollow' && event.source?.type==='user' && /^U[0-9a-f]{32}$/.test(user||'') && Number.isFinite(event.timestamp)){
-    if (registration) await db.query(`update linebot_private.pairing_codes set completed_at=now(),claimed_line_id=null
+    // Clear the claim hash on cancellation so a closed invite is not reported as a submission.
+    if (registration) await db.query(`update linebot_private.pairing_codes set completed_at=now(),claimed_line_hash=null,claimed_line_id=null
       where account_id=$1 and bot_id=$2 and claimed_line_hash=$3 and completed_at is null and consumed_at<=to_timestamp($4::double precision/1000)`,
       [account,bot,recipientHash(key,bot,user),event.timestamp]);
     await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where account_id=$1 and bot_id=$2 and line_hash=$3 and created_at<=to_timestamp($4::double precision/1000)",[account,bot,recipientHash(key,bot,user),event.timestamp]);continue;

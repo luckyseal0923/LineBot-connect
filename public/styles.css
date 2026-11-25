@@ -582,6 +582,7 @@ input[readonly], textarea[readonly] { background: var(--surface); }
   border-radius: .6rem;
 }
 .detail-block > .button { justify-self: start; }
+.pair-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .expiry-note { font-size: .84rem; font-weight: 650; color: var(--deep); }
 #compose > .empty-state, #recipients-list, #notification-list, #integration-list { margin-top: .62rem; }
 

@@ -5,6 +5,7 @@ import { readRecipientDetails, recipientName } from './recipient-details.mjs';
 
 const ticketPattern = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/;
 const inactive = '這個連結已使用或已失效。如尚未完成登記，請向邀請人索取新配對碼。';
+const formLifetime = "interval '30 minutes'";
 const activeBot = `join linebot_private.accounts a on a.id=b.account_id and a.status='active'
   join linebot_private.platform_services p on p.bot_id=b.id and p.account_id=b.account_id`;
 
@@ -34,10 +35,11 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
       const code=String(randomInt(1000000)).padStart(6,'0');
       const result=await db.query(`insert into linebot_private.pairing_codes(account_id,bot_id,code_hash,expires_at)
         select b.account_id,b.id,$3,now()+interval '10 minutes' from linebot_private.bot_credentials b ${activeBot}
-        where b.id=$2 and b.account_id=$1 and b.enabled on conflict(code_hash) do nothing returning expires_at`,
+        where b.id=$2 and b.account_id=$1 and b.enabled on conflict(code_hash) do nothing returning id,expires_at`,
         [account,bot,codeHash(bot,code)]);
       if (result.rows.length) {
-        const invitation = {message:code,expiresMinutes:10,expiresAt:result.rows[0].expires_at};
+        const {id, expires_at} = result.rows[0];
+        const invitation = {invitationId:id,message:code,expiresMinutes:10,expiresAt:expires_at};
         if (info?.basicId && info.userId === target.bot_user_id) {
           const chatUrl = `https://line.me/R/oaMessage/${encodeURIComponent(info.basicId)}/?${encodeURIComponent(pairingMessage(code))}`;
           invitation.chatQr = await QRCode.toDataURL(chatUrl,{width:260,margin:4});
@@ -47,6 +49,22 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
       }
     }
     return null;
+  }
+
+  async function status(account,platformId,invitationId) {
+    const {rows:[row]} = await db.query(`select case
+      when c.completed_at is not null and c.claimed_line_hash is not null then 'completed'
+      when c.completed_at is not null then 'cancelled'
+      when c.consumed_at is null and c.expires_at<=now() then 'code_expired'
+      when c.consumed_at+${formLifetime}<=now() then 'form_expired'
+      when not b.enabled then 'paused'
+      when c.consumed_at is null then 'waiting'
+      else 'claimed' end as status,
+      coalesce(c.consumed_at+${formLifetime},c.expires_at) as "expiresAt"
+      from linebot_private.pairing_codes c join linebot_private.bot_credentials b
+      on c.bot_id=b.id and c.account_id=b.account_id ${activeBot}
+      where c.account_id=$1 and p.id=$2 and c.id=$3 and c.label is null`,[account,platformId,invitationId]);
+    return row || null;
   }
 
   async function claim(account,bot,user,lineHash,code,replyToken) {
@@ -60,7 +78,7 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
       where c.account_id=$1 and c.bot_id=$2 and b.id=c.bot_id and b.account_id=c.account_id and b.enabled
         and c.code_hash=$3 and c.label is null and c.completed_at is null and
         ((c.consumed_at is null and c.expires_at>now()) or
-         (c.claimed_line_hash=$4 and c.consumed_at>now()-interval '30 minutes'))
+         (c.claimed_line_hash=$4 and c.consumed_at>now()-${formLifetime}))
       returning c.id,b.encrypted_access_token)
       select * from claimed`,args);
     const row=rows[0];
@@ -110,7 +128,7 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
     const scope=`from linebot_private.pairing_codes c join linebot_private.bot_credentials b
       on c.bot_id=b.id and c.account_id=b.account_id ${activeBot}
       where c.id=$1 and c.claimed_line_id is not null and c.completed_at is null and b.enabled
-      and c.consumed_at>now()-interval '30 minutes'`;
+      and c.consumed_at>now()-${formLifetime}`;
     if (data.action==='open') {
       const {rows}=await db.query(`select coalesce(p.name,b.bot_name) as platform ${scope}`,[match[1]]);
       return rows.length ? send(200,rows[0]) : send(410,{error:inactive});
@@ -129,5 +147,5 @@ export function createPairingRegistration({db, key, allow, publicOrigin, recipie
       returning id`,[match[1],label,JSON.stringify(details)]);
     return saved.rows.length ? send(200,{ok:true}) : send(410,{error:inactive});
   }
-  return {issue,claim,handle};
+  return {issue,status,claim,handle};
 }
