@@ -66,22 +66,29 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   }
 
   async function edit(accountId, id, input) {
+    const rename = input && Object.hasOwn(input, 'name');
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
+    if (rename && (!name || name.length > 80)) return {error: 'invalid'};
+    if (rename && !Object.hasOwn(input, 'recipientIds') && !Object.hasOwn(input, 'recipientId')) {
+      const result = await db.query(`update linebot_private.integrations set name=$3,event_name=$3
+        where id=$2 and account_id=$1 and deleted_at is null returning id`, [accountId, id, name]);
+      return result.rowCount ? {id} : {error: 'unavailable'};
+    }
     const raw = input?.recipientIds ?? (input?.recipientId ? [input.recipientId] : null);
-    if (!name || name.length>80 || !Array.isArray(raw) || raw.some(id=>typeof id!=='string' || !externalIdPattern.test(id))) return {error:'invalid'};
+    if (!Array.isArray(raw) || raw.some(id=>typeof id!=='string' || !externalIdPattern.test(id))) return {error:'invalid'};
     const ids=[...new Set(raw.map(id=>id.toLowerCase()))].sort();
     const result=await db.query(`with context as (
       select i.id,b.id as bot_id,coalesce(p.id,legacy.id) as platform_id
       from linebot_private.integrations i ${eventBotJoins}
       left join linebot_private.platform_services legacy on legacy.bot_id=b.id and legacy.account_id=i.account_id
       where i.id=$2 and i.account_id=$1 and i.deleted_at is null for update of i
-    ) update linebot_private.integrations i set name=$3,event_name=$3,platform_id=c.platform_id,
+    ) update linebot_private.integrations i set name=coalesce($3,i.name),event_name=coalesce($3,i.event_name),platform_id=c.platform_id,
       recipient_id=($4::uuid[])[1],extra_recipient_ids=($4::uuid[])[2:],
       revision=i.revision + case when ${assigned}=$4 then 0 else 1 end
       from context c where i.id=c.id and (c.platform_id is not null or cardinality($4::uuid[])>0)
       and cardinality($4::uuid[])=(select count(*) from linebot_private.recipients r
         where r.account_id=$1 and r.bot_id=c.bot_id and r.id=any($4) and (r.active or r.id=any(${assigned})))
-      returning i.id`,[accountId,id,name,ids]);
+      returning i.id`,[accountId,id,rename ? name : null,ids]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
 

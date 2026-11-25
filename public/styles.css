@@ -551,32 +551,25 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .record-list .record-status { display: grid; justify-items: end; gap: .2rem; }
 .record-list li .button, .record-list .chip { justify-self: end; }
 
-.integration-secret { margin-bottom: 1rem; border-color: #a5cbb9; background: #f5fbf7; }
 .panel > h2 + .empty-state { margin-top: .65rem; }
-.integration-secret .copy-field, .integration-webhook .copy-field { margin-top: .65rem; }
-.integration-item { padding-block: .85rem; }
-.integration-item + .integration-item { border-top: 1px solid var(--border); }
-.integration-item .section-heading { margin-bottom: .3rem; align-items: start; }
-.integration-item .button-row { margin-top: .5rem; }
-.integration-meta { display: flex; flex-wrap: wrap; gap: .22rem .9rem; }
-.integration-meta strong { font-weight: 675; color: var(--ink); }
-.integration-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .4rem .8rem;
-  margin-top: .55rem;
+#integration-list { display: grid; gap: .85rem; }
+.integration-item .section-heading { align-items: start; margin-bottom: .5rem; }
+.integration-item h2 { overflow-wrap: anywhere; }
+.event-meta { display: grid; grid-template-columns: auto 1fr; gap: .2rem .9rem; margin: 0 0 .85rem; }
+.event-meta dt { color: var(--muted); }
+.event-meta dd { margin: 0; overflow-wrap: anywhere; }
+.event-editor { max-width: 36rem; margin: .85rem 0; }
+.integration-item .event-editor { border-top: 1px solid var(--border); padding-top: .8rem; }
+.event-editor > button { justify-self: start; }
+.event-menu { position: relative; }
+.event-menu summary { list-style: none; font-size: 1.2rem; }
+.event-menu summary::-webkit-details-marker { display: none; }
+.event-menu-list {
+  position: absolute; z-index: 5; right: 0; top: 100%; min-width: 9rem;
+  display: grid; gap: .15rem; padding: .4rem; background: var(--paper);
+  border: 1px solid var(--border); border-radius: .6rem; box-shadow: 0 .35rem 1rem #102b201a;
 }
-.integration-actions > .button { min-height: 2.2rem; }
-.integration-actions > details { min-width: 0; }
-.integration-actions > details[open] { flex: 1 1 100%; }
-.integration-webhook { margin-top: .25rem; }
-.integration-webhook[open], .integration-edit[open] {
-  padding: .35rem 0 .65rem;
-  border-top: 1px solid var(--border);
-}
-.integration-webhook .button { justify-self: start; }
-.integration-edit .form-stack { max-width: 30rem; margin: .5rem 0 .25rem; }
+.event-menu-list .button { justify-content: flex-start; }
 .detail-block {
   display: grid;
   gap: .55rem;

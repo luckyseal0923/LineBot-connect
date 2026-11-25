@@ -1316,10 +1316,11 @@ async function renderRecipients(signal) {
 }
 
 async function renderIntegrations(signal) {
-  view.innerHTML = pageHeading('事件串接', '將事件的專屬 Webhook 網址貼到數位平台。事件發生時，接線站會通知設定的收件者。',
+  view.innerHTML = pageHeading('事件串接', '建立事件、指定收件者，再將專屬 Webhook 網址貼到數位平台。',
     `<div class="button-row">
       <a href="/connection-guide" class="button button-secondary" target="_blank" rel="noopener">Webhook 串接指南</a>
-      ${buttonLink('查看發送紀錄', '#messages', 'secondary')}
+      ${buttonLink('查看發送紀錄', '#messages', 'quiet')}
+      <button class="button button-primary" id="new-event" aria-controls="integration-create" aria-expanded="false" disabled>＋ 新增事件</button>
     </div>`) +
     '<div id="integration-workspace"><p class="page-loading" role="status">正在載入串接設定…</p></div>';
   const workspace = view.querySelector('#integration-workspace');
@@ -1344,94 +1345,89 @@ async function renderIntegrations(signal) {
         ${escapeHtml(person.label)}${person.active===false ? '（已停用）' : ''}</label>`).join('') ||
         buttonLink('邀請收件者', '#recipients', 'secondary')}</fieldset>`;
   }
-  function webhookSettings(prefix, url) {
-    return `
-      ${copyField(prefix + '-url', 'Webhook 網址（POST）', url, '複製網址')}
-      <p class="muted small">貼到數位平台的 Webhook 欄位並選擇 POST。持有完整網址即可觸發這條通知。</p>`;
-  }
-
   workspace.innerHTML = `
-    <section class="panel integration-secret" id="integration-secret" aria-labelledby="integration-secret-title" hidden></section>
+    <form id="integration-create" class="panel form-stack event-editor" hidden>
+      ${nameField('')}
+      <div class="button-row"><button class="button button-primary" type="submit">建立事件</button>
+        <button class="button button-quiet" type="button" data-cancel>取消</button></div>
+    </form>
     <p class="feedback flash-banner" role="status" id="integration-feedback"></p>
-    <div class="workspace-columns">
-      <section class="panel" aria-labelledby="integration-list-title">
-        <div class="section-heading"><h2 id="integration-list-title" tabindex="-1">已設定的事件</h2>
-          <button type="button" class="button button-quiet" id="integration-refresh">重新查詢</button>
-        </div>
-        <div id="integration-list"></div>
-      </section>
-      <section class="panel" aria-labelledby="integration-create-title">
-        <h2 id="integration-create-title">新增事件串接</h2>
-        <form id="integration-create" class="form-stack">
-          ${nameField('')}
-          <button type="submit" class="button button-primary">建立 Webhook</button>
-        </form>
-      </section>
-    </div>`;
+    <div class="section-heading"><span class="muted small" id="event-count"></span>
+      <button class="button button-quiet" id="integration-refresh">重新查詢</button></div>
+    <section id="integration-list" aria-label="已設定的事件"></section>`;
 
   const list = workspace.querySelector('#integration-list');
   const feedback = workspace.querySelector('#integration-feedback');
-  const secret = workspace.querySelector('#integration-secret');
+  document.addEventListener('click', event => {
+    const menu = list.querySelector('.event-menu[open]');
+    if (menu && !menu.contains(event.target)) menu.open = false;
+  }, { signal });
+  list.addEventListener('keydown', event => {
+    const menu = event.target.closest('.event-menu[open]');
+    if (menu && event.key === 'Escape') {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    }
+  });
+  const createForm = workspace.querySelector('#integration-create');
+  const newEvent = view.querySelector('#new-event');
+  function toggleCreate(open) {
+    createForm.hidden = !open;
+    newEvent.setAttribute('aria-expanded', String(open));
+    if (open) createForm.elements.name.focus();
+    else newEvent.focus();
+  }
+  newEvent.disabled = false;
+  newEvent.addEventListener('click', () => toggleCreate(createForm.hidden));
+  createForm.querySelector('[data-cancel]').addEventListener('click', () => toggleCreate(false));
   const testKeys = new Map();
   let openEventId;
   let items = initial.integrations;
   let busy = false;
 
   function renderList() {
+    workspace.querySelector('#event-count').textContent = `共 ${items.length} 個事件`;
     if (!items.length) {
-      list.innerHTML = emptyState('尚未建立串接', '先輸入事件名稱，建立後再指定收件者。');
+      list.innerHTML = emptyState('尚未建立事件', '點選頁首的「＋ 新增事件」，輸入事件名稱即可開始。');
       return;
     }
     list.innerHTML = items.map(item => {
       const status = integrationStatus(item);
       const action = (type, label, disabled = false, style = 'quiet') =>
         `<button type="button" class="button button-${style}" data-integration-action="${type}"${disabled ? ' disabled' : ''}>${label}</button>`;
-      return `<article class="integration-item" data-integration-id="${escapeHtml(item.id)}">
-        <div class="section-heading"><h3 tabindex="-1">${escapeHtml(integrationName(item))}</h3>${chip(...status)}</div>
-        ${!item.eventName ? '<p class="muted small">沿用舊名稱，請確認觸發事件。</p>' : ''}
-        <div class="integration-meta small">
-          <span>Webhook 代號 <strong>${escapeHtml(webhookCode(item))}</strong></span>
-          <span>收件者 <strong>${escapeHtml(item.recipientLabel || '待設定')}</strong></span>
+      const assigned = item.recipients.length > 0;
+      const ready = status[1] === 'success';
+      const copy = item.privateWebhookUrl ? action('copy', '複製 Webhook 網址', false, ready ? 'primary' : 'secondary') : '';
+      const recipientButton = `<button type="button" class="button button-${assigned ? 'secondary' : 'primary'}"
+        data-integration-action="recipients" aria-controls="people-${item.id}" aria-expanded="${item.id === openEventId}">${assigned ? '編輯' : '設定'}收件者</button>`;
+      return `<article class="panel integration-item" data-integration-id="${escapeHtml(item.id)}">
+        <div class="section-heading">
+          <h2 tabindex="-1">${escapeHtml(integrationName(item))}</h2>
+          <div class="button-row">${chip(...status)}
+            <details class="event-menu" name="event-management"><summary class="button button-quiet" aria-label="管理事件" title="管理事件">⋯</summary>
+              <div class="event-menu-list">
+                ${action('rename', '重新命名')}
+                ${item.enabled ? action('disable', '停用事件') : action('enable', '啟用事件', !item.targetReady || !item.keyTail)}
+                ${action('rotate', item.keyTail ? '換發網址' : '產生新網址')}
+                ${item.keyTail ? action('revoke', '撤銷 Webhook') : ''}
+                ${action('delete', '刪除事件', false, 'danger-outline')}
+              </div>
+            </details>
+          </div>
         </div>
-        <div class="integration-actions">
-          ${item.privateWebhookUrl ? `<details class="action-menu integration-webhook">
-            <summary>Webhook 設定</summary>
-            ${webhookSettings('event-' + item.id, item.privateWebhookUrl)}
-          </details>` : ''}
-          ${action('test', '發送測試', status[1] !== 'success', 'secondary')}
-          <details class="action-menu integration-edit"${item.id === openEventId ? ' open' : ''}><summary>設定收件者與管理事件</summary>
-            <form class="form-stack">${nameField(integrationName(item))}${recipientFields(item)}
-              <button class="button button-secondary" type="submit">儲存串接設定</button>
-            </form>
-            <div class="button-row">
-              ${item.enabled ? action('disable', '停用串接') : action('enable', '啟用串接', !item.targetReady || !item.keyTail)}
-              ${action('rotate', item.keyTail ? '換發網址' : '產生新網址')}
-              ${item.keyTail ? action('revoke', '撤銷 Webhook', false, 'danger-outline') : ''}
-              ${action('delete', '刪除事件', false, 'danger-outline')}
-            </div>
-          </details>
-        </div>
+        ${!item.eventName ? '<p class="muted small">沿用舊名稱，可在管理事件中重新命名。</p>' : ''}
+        <dl class="event-meta"><dt>Webhook 代號</dt><dd>${escapeHtml(webhookCode(item))}</dd>
+          <dt>收件者</dt><dd>${escapeHtml(item.recipientLabel || '待設定')}${assigned ? `（${item.recipients.length} 人）` : ''}</dd></dl>
+        <div class="button-row">${assigned ? copy + recipientButton : recipientButton + copy}
+          ${assigned ? action('test','發送測試', !ready, 'quiet') : ''}</div>
+        <form id="people-${item.id}" data-editor="recipients" class="form-stack event-editor"${item.id === openEventId ? '' : ' hidden'}>
+          ${recipientFields(item)}<button class="button button-primary" type="submit">儲存收件者</button>
+        </form>
+        <form data-editor="rename" class="form-stack event-editor" hidden>${nameField(integrationName(item))}
+          <div class="button-row"><button class="button button-secondary" type="submit">儲存名稱</button>${action('cancelRename', '取消')}</div>
+        </form>
       </article>`;
     }).join('');
-    bindCopyFields(list);
-  }
-
-  function hideSecret() {
-    secret.replaceChildren();
-    secret.hidden = true;
-  }
-
-  function showWebhook(privateWebhookUrl) {
-    secret.innerHTML = `<div class="section-heading"><h2 id="integration-secret-title" tabindex="-1">Webhook 串接設定</h2>
-        <button class="button button-quiet" type="button" data-hide-key>關閉</button></div>
-      ${webhookSettings('new-webhook', privateWebhookUrl)}`;
-    secret.hidden = false;
-    bindCopyFields(secret);
-    secret.querySelector('[data-hide-key]').addEventListener('click', () => {
-      hideSecret();
-      workspace.querySelector('#integration-list-title').focus();
-    });
-    secret.querySelector('h2').focus();
   }
 
   async function refreshList() {
@@ -1450,11 +1446,10 @@ async function renderIntegrations(signal) {
     try {
       const result = await api(route + '?webhooks=1', { data, signal });
       if (signal.aborted) return;
-      if (result.privateWebhookUrl) showWebhook(result.privateWebhookUrl);
       after?.(result);
       report(feedback, success, 'success');
       try { await refreshList(); }
-      catch { if (!signal.aborted) report(feedback, `${success} 請重新查詢清單。`, 'warning'); }
+      catch { if (!signal.aborted) { list.replaceChildren(); report(feedback, `${success} 請重新查詢清單。`, 'warning'); } }
     } catch (error) {
       if (!signal.aborted) report(feedback, error.message, 'danger');
     } finally {
@@ -1463,12 +1458,12 @@ async function renderIntegrations(signal) {
     }
   }
 
-  const createForm = workspace.querySelector('#integration-create');
-  createForm?.addEventListener('submit', event => {
+  createForm.addEventListener('submit', event => {
     event.preventDefault();
     change(createForm.querySelector('button'), path, Object.fromEntries(new FormData(createForm)),
-      'Webhook 已建立。請勾選收件者並儲存。', result => {
+      '事件已建立。請勾選收件者並儲存。', result => {
         createForm.reset();
+        toggleCreate(false);
         openEventId = result.id;
       });
   });
@@ -1476,16 +1471,56 @@ async function renderIntegrations(signal) {
     event.preventDefault();
     const form = event.target;
     const id = form.closest('[data-integration-id]').dataset.integrationId;
-    const data=new FormData(form);
-    change(form.querySelector('[type="submit"]'), `${path}/${id}/edit`,
-      {name:data.get('name'),recipientIds:data.getAll('recipientIds')}, '已儲存事件與收件對象。');
+    const data = new FormData(form);
+    const renaming = form.dataset.editor === 'rename';
+    const payload = renaming ? {name: data.get('name')} : {recipientIds: data.getAll('recipientIds')};
+    change(form.querySelector('[type="submit"]'), `${path}/${id}/edit`, payload,
+      renaming ? '已更新事件名稱。' : '已儲存收件者。', () => { openEventId = null; });
   });
   list.addEventListener('click', async event => {
     const button = event.target.closest('[data-integration-action]');
     if (!button || busy) return;
-    const item = items.find(entry => entry.id === button.closest('[data-integration-id]').dataset.integrationId);
+    const card = button.closest('[data-integration-id]');
+    const item = items.find(entry => entry.id === card.dataset.integrationId);
     if (!item) return;
     const action = button.dataset.integrationAction;
+    const menu = card.querySelector('.event-menu');
+    menu.open = false;
+    const renameForm = card.querySelector('[data-editor="rename"]');
+    if (action === 'rename' || action === 'cancelRename') {
+      renameForm.hidden = action === 'cancelRename';
+      if (renameForm.hidden) { renameForm.reset(); menu.querySelector('summary').focus(); }
+      else { renameForm.elements.name.focus(); renameForm.elements.name.select(); }
+      return;
+    }
+    if (action === 'recipients') {
+      const form = card.querySelector('[data-editor="recipients"]');
+      form.hidden = !form.hidden;
+      button.setAttribute('aria-expanded', String(!form.hidden));
+      return;
+    }
+    if (action === 'copy') {
+      try {
+        await navigator.clipboard.writeText(item.privateWebhookUrl);
+        button.textContent = '已複製';
+        report(feedback, '已複製 Webhook 網址。貼到數位平台後，發送方式選 POST。', 'success');
+        setTimeout(() => { button.textContent = '複製 Webhook 網址'; }, 1800);
+      } catch {
+        let input = card.querySelector('[data-manual-copy]');
+        if (!input) {
+          input = document.createElement('input');
+          input.dataset.manualCopy = '';
+          input.readOnly = true;
+          input.setAttribute('aria-label', '手動複製 Webhook 網址');
+          card.append(input);
+        }
+        input.value = item.privateWebhookUrl;
+        input.focus();
+        input.select();
+        report(feedback, '已選取 Webhook 網址，請按 Ctrl+C 或使用複製指令。');
+      }
+      return;
+    }
     const confirmation = {
       test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
@@ -1505,7 +1540,6 @@ async function renderIntegrations(signal) {
     if (action === 'test' && !testKeys.has(item.id)) testKeys.set(item.id, 'test-' + crypto.randomUUID());
     const after = () => {
       if (action === 'test' || action === 'delete') testKeys.delete(item.id);
-      if (action === 'delete' || action === 'revoke') hideSecret();
       if (action === 'delete') {
         items = items.filter(entry => entry.id !== item.id);
         renderList();
