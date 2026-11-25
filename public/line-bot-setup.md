@@ -47,9 +47,9 @@ description: 用繁體中文協助初學者開設 LINE 官方帳號。開發者�
 1. 在已核對的 LINE Developers 頻道，從「Basic settings」取得 Channel secret，從「Messaging API」取得 Channel access token (long-lived)。沿用已發行的有效權杖。首次發行時，確認目標 Bot 和接線站平台，取得所需確認後按「Issue」。換發既有憑證前先核對是否有其他服務使用。[LINE 官方權杖說明](https://developers.line.biz/en/docs/basics/channel-access-token/)
 2. 在接線站選擇對應數位平台。每個數位平台對應一個 Bot。進入「LINE Bot 設定」→「開始手動設定」，把兩項憑證分別填進同名欄位，按「儲存並取得 Webhook」。接線站帳號待核准時，可先完成 LINE 的設定，核准後再續接。
 3. 把接線站「LINE Bot 設定」頁的專屬 Webhook 網址填到 LINE Developers 的「Messaging API」→「Webhook URL」。確認是同一個頻道。若已有另一個網址，先與開發者確認原服務和切換時機。儲存後按「Verify」，確認顯示「Success」，開啟「Use webhook」，再到接線站按「檢查 LINE 驗證」並讀取「LINE 驗證通過」。[LINE 官方驗證說明](https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/)
-4. 使用者要求試收時，到「收件對象」為本人或已同意測試的人產生配對文字。由收件者加入 Bot 好友，並在一對一 LINE 聊天送出配對文字。AI 可查詢配對狀態、準備測試訊息並依授權發送。LINE 已受理後，再請收件者確認有收到。
+4. 使用者要求新增收件者時，到「收件對象」分享該平台的邀請 QR Code。首次使用須先完成同一 Provider 的 LINE Login 與 LIFF 設定，並連結該平台的官方帳號。由收件者掃碼登入 LINE、加入好友、在網頁填寫名字並送出。使用者要求試收時，在收件名單對指定對象按「傳送測試」。LINE 已受理後，再請收件者確認有收到。
 
-「LINE Bot 設定」的 Webhook 用來讓接線站接收 LINE 事件。「事件串接」的 Webhook 用來讓外部數位平台觸發 LINE 通知。依使用者所在畫面辨認兩者。接線站現有的收件者配對使用一對一 LINE 聊天。群組邀請設定的驗收是 Bot 可接受邀請。
+「LINE Bot 設定」的 Webhook 用來讓接線站接收 LINE 事件。「事件串接」的 Webhook 用來讓外部數位平台觸發 LINE 通知。依使用者所在畫面辨認兩者。掃碼登記供個別 LINE 使用者加入收件名單。群組邀請設定的驗收是 Bot 可接受邀請。
 
 ## 完成檢查
 

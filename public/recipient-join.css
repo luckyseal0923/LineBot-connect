@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #f1f5f2; color: #17382d; font: 1rem/1.6 system-ui,sans-serif; }
+main { width: min(92%,27rem); margin: 8vh auto; padding: 1.6rem; background: white; border: 1px solid #d9e5de; border-radius: 1rem; }
+h1 { font-size: 1.65rem; margin: .4rem 0; }
+#platform { font-weight: 700; color: #08664d; margin: 0; }
+label,input,button { display: block; width: 100%; }
+input,button { font: inherit; border-radius: .45rem; padding: .65rem; margin: .35rem 0 .9rem; }
+input { border: 1px solid #9eb3a8; }
+button { background: #08664d; color: white; font-weight: 700; border: 0; }
+button:disabled { opacity: .65; }
+a { color: #08664d; }
+[hidden] { display: none !important; }

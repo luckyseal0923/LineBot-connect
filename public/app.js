@@ -401,7 +401,7 @@ async function renderOverview(signal) {
   const next = view.querySelector('#overview-next');
   let nextAction;
   if (!platform.botEnabled) nextAction = ['設定 LINE Bot', '連結並啟用 Bot 後，就能邀請收件者完成配對。', '#bot'];
-  else if (recipients && !recipients.length) nextAction = ['配對第一位收件者', '請收件者將配對文字傳給這個平台的 Bot。', '#recipients'];
+  else if (recipients && !recipients.length) nextAction = ['邀請第一位收件者', '到收件對象頁面分享邀請 QR Code。', '#recipients'];
   else if (recipients && integrations && !integrations.length) nextAction = ['建立第一組事件串接', '為事件指定收件者並取得專用金鑰。', '#integrations'];
   if (nextAction) {
     const [label, description, destination] = nextAction;
@@ -706,7 +706,7 @@ function webhookDisplay(bot) {
 
 function setupProgress(current) {
   return `<ol class="wizard-progress" aria-label="Bot 設定進度">
-    ${['填寫憑證', '驗證 Webhook', '配對與測試'].map((label, index) => {
+    ${['填寫憑證', '驗證 Webhook'].map((label, index) => {
       const step = index + 1;
       return `<li ${step === current ? 'aria-current="step"' : ''} data-completed="${step < current}">
         <span aria-hidden="true">${step < current ? '✓' : step}</span>${label}</li>`;
@@ -784,24 +784,10 @@ function renderWebhookStep(bot, signal) {
       </ol>
       ${webhookDisplay(bot)}
       <div class="button-row wizard-actions">
-        ${buttonLink('下一步：配對與測試', '#bot?setup=test&bot=' + encodeURIComponent(bot.id))}
+        ${buttonLink('完成設定', '#bot')}
       </div>
     </section>`;
   bindWebhookControls(view.querySelector('#webhook-step'), bot, signal);
-}
-
-function renderTestStep(bot) {
-  const query = '?bot=' + encodeURIComponent(bot.id);
-  view.innerHTML = wizardHeading('先配對一位收件者，再送出一則測試通知。') +
-    `<section class="panel wizard-panel">
-      ${setupProgress(3)}
-      <h2>用 ${escapeHtml(bot.name)} 發送測試通知</h2>
-      <p>請收件者加入 Bot 好友，並在一對一聊天室貼上配對文字。配對完成後即可選擇對方發送。</p>
-      <div class="button-row">
-        ${buttonLink('前往配對收件對象', '#recipients' + query)}
-        ${buttonLink('已配對，前往發送', '#messages' + query, 'secondary')}
-      </div>
-    </section>`;
 }
 
 function lineSetupOptions(choices, selected, placeholder = '') {
@@ -956,7 +942,7 @@ async function renderBots(params, signal) {
       return;
     }
     if (step === 'test') {
-      renderTestStep(bot);
+      goTo(workspaceLink('#recipients'));
       return;
     }
   }
@@ -968,19 +954,12 @@ async function renderBots(params, signal) {
       ${webhookDisplay(bot)}
     </section>
     <section class="panel" aria-labelledby="bot-actions-title">
-      <h2 id="bot-actions-title">${bot.enabled ? '配對與測試' : '重新啟用 Bot'}</h2>
-      <p class="muted">${bot.enabled
-        ? '驗證 Webhook 後，邀請收件者和這個 Bot 完成配對。'
-        : '請用原 LINE 官方帳號重新儲存憑證，即可恢復配對與發送。'}</p>
-      <div class="button-row spaced">${bot.enabled
-        ? buttonLink('配對收件者', '#recipients')
-        : buttonLink('重新設定憑證', '#bot?setup=1')}</div>
-      ${bot.enabled ? `<details class="action-menu spaced"><summary>Bot 管理</summary>
-        <div class="button-row">
-          ${buttonLink('更新憑證', '#bot?setup=1', 'secondary')}
-          <button class="button button-danger-outline" type="button" data-disable-bot>停用 Bot</button>
-        </div>
-      </details>` : ''}
+      <h2 id="bot-actions-title">Bot 管理</h2>
+      <p class="muted">管理此平台的 LINE 憑證及啟用狀態。</p>
+      <div class="button-row spaced">
+        ${buttonLink(bot.enabled ? '更新憑證' : '重新啟用 Bot', '#bot?setup=1', 'secondary')}
+        ${bot.enabled ? '<button class="button button-danger-outline" type="button" data-disable-bot>停用 Bot</button>' : ''}
+      </div>
       <p class="feedback" data-bot-feedback role="status"></p>
     </section>
   </div>`;
@@ -1015,6 +994,42 @@ function showPageError(target, message) {
   target.querySelector('[data-retry]').addEventListener('click', () => render());
 }
 
+async function renderRecipientInvite(panel, signal) {
+  let config;
+  try { config = await api('recipient/invite',{signal}); }
+  catch(error) { if(!signal.aborted) showPageError(panel,error.message); return; }
+  if(signal.aborted) return;
+  function draw() {
+    panel.innerHTML = `${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
+      <img class="invite-qr" width="230" height="230" alt="收件者登記 QR Code" src="${escapeHtml(config.qr)}">
+      ${copyField('invite-url','收件者邀請連結',config.url,'複製連結')}` : '<p>首次使用請先設定此 Bot 的 LINE 登入，完成後即可分享 QR Code。</p>'}
+      <details class="help-block" ${config.qr ? '' : 'open'}><summary>設定 LINE 登入</summary>
+        <ol class="instructions">
+          <li>在 <a href="${consoleUrl}" target="_blank" rel="noopener">LINE Developers</a> 選擇此 Bot 所屬的 Provider，建立或開啟 LINE Login 頻道，並在 Basic settings 將 Linked LINE Official Account 設為此 Bot。</li>
+          <li>新增 LIFF 網頁，選擇 Full、勾選 profile、啟用加入好友選項，並填入下方的 Endpoint URL。</li>
+          <li>將 LINE Login 頻道設為 Published，將 LIFF ID 貼回此處。</li>
+        </ol>
+        ${copyField('join-endpoint','Endpoint URL',config.endpoint,'複製網址')}
+        <form class="form-stack"><label>LIFF ID<input name="liff" value="${escapeHtml(config.liffId)}" required maxlength="80" placeholder="例如 1234567890-AbcdEfgh"></label>
+          <button class="button button-secondary">儲存並顯示 QR Code</button><p class="feedback" role="status"></p></form>
+      </details>`;
+    bindCopyFields(panel);
+    const form=panel.querySelector('form');
+    form.addEventListener('submit', async event=>{
+      event.preventDefault();
+      const button=form.querySelector('button');
+      if(button.disabled) return;
+      button.disabled=true;
+      try {
+        config=await api('recipient/invite',{data:{liffId:form.elements.liff.value.trim()},signal});
+        if(!signal.aborted) draw();
+      } catch(error) { if(!signal.aborted) report(form.querySelector('.feedback'),error.message,'danger'); }
+      finally { button.disabled=false; }
+    });
+  }
+  draw();
+}
+
 async function renderRecipients(signal) {
   const platform = currentPlatform;
   view.innerHTML = pageHeading('收件對象', '管理這個平台已配對的 LINE 收件者。') +
@@ -1022,7 +1037,7 @@ async function renderRecipients(signal) {
   const body = view.querySelector('#recipients-body');
   if (!platform.botEnabled) {
     body.innerHTML = `<section class="panel">${emptyState('先啟用平台的 LINE Bot',
-      'Bot 啟用後，就能建立收件者的配對文字。', buttonLink('前往 Bot 設定', '#bot'))}</section>`;
+      'Bot 啟用後，就能設定掃碼邀請收件者。', buttonLink('前往 Bot 設定', '#bot'))}</section>`;
     return;
   }
   let recipients;
@@ -1034,15 +1049,17 @@ async function renderRecipients(signal) {
   }
   if (signal.aborted) return;
   body.innerHTML = `<div class="workspace-columns">
+    <section class="panel" aria-labelledby="invite-title"><h2 id="invite-title">邀請收件者</h2>
+      <div id="recipient-invite" class="spaced" aria-live="polite">載入邀請設定中…</div>
+    </section>
     <section class="panel" aria-labelledby="paired-title">
-      <div class="section-heading"><h2 id="paired-title">已配對名單</h2>
+      <div class="section-heading"><h2 id="paired-title">收件名單</h2>
         <button id="refresh-recipients" class="button button-quiet" type="button">重新查詢</button>
       </div>
       <p id="recipient-feedback" class="feedback" role="status"></p>
       <div id="recipients-list"></div>
     </section>
-    <section class="panel" aria-labelledby="pair-title">
-      <h2 id="pair-title">邀請收件者</h2>
+    <details class="panel"><summary>使用一次性配對文字</summary>
       <p class="muted">請對方加入「${escapeHtml(platform.botName)}」為好友，在一對一聊天室傳送配對文字。</p>
       <form id="pair-form" class="form-stack">
         <label>收件對象名稱<input name="label" required maxlength="80" placeholder="例如 課程承辦人"></label>
@@ -1050,9 +1067,10 @@ async function renderRecipients(signal) {
         <p id="pair-result" class="feedback" role="status"></p>
       </form>
       <div id="pair-preview" class="detail-block" hidden></div>
-    </section>
+    </details>
   </div>`;
 
+  renderRecipientInvite(body.querySelector('#recipient-invite'), signal);
   const form = body.querySelector('#pair-form');
   const list = body.querySelector('#recipients-list');
   const refresh = body.querySelector('#refresh-recipients');
@@ -1062,15 +1080,29 @@ async function renderRecipients(signal) {
 
   function drawList(items) {
     if (!items.length) {
-      list.innerHTML = emptyState('尚無收件對象', '產生配對文字並請收件者傳送後，按「重新查詢」。');
+      list.innerHTML = emptyState('尚無收件對象', '對方掃碼登記後，按「重新查詢」即可查看。');
       return;
     }
     list.innerHTML = `<ul class="record-list">
       ${items.map((recipient, index) => `<li>
         <div><strong>${escapeHtml(recipient.label)}</strong></div>
-        <button class="button button-danger-outline" type="button" data-remove="${index}">移除</button>
+        <div class="button-row"><button class="button button-secondary" type="button" data-test="${index}">傳送測試</button>
+        <button class="button button-danger-outline" type="button" data-remove="${index}">移除</button></div>
       </li>`).join('')}
     </ul><div class="button-row spaced">${buttonLink('前往發送通知', '#messages', 'secondary')}</div>`;
+    for (const button of list.querySelectorAll('[data-test]')) {
+      const recipient = items[Number(button.dataset.test)];
+      button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          if (!await confirmAction('傳送測試通知', `用「${platform.botName}」傳送測試通知給「${recipient.label}」？`, '傳送', signal, 'primary')) return;
+          const {status} = await api('notification/send', {data:{recipientId:recipient.id, message:'這是「'+platformName(platform)+'」的收件測試通知。',requestId:crypto.randomUUID()},signal});
+          report(feedback, status==='accepted' ? 'LINE 已受理，請向對方確認是否收到。' : status==='failed' ? 'LINE 發送失敗。' : '結果未確認，請查看發送紀錄。');
+        } catch(error) { if(!signal.aborted) report(feedback,error.message,'danger'); }
+        finally { button.disabled=false; }
+      });
+    }
     for (const button of list.querySelectorAll('[data-remove]')) {
       const recipient = items[Number(button.dataset.remove)];
       button.addEventListener('click', async () => {

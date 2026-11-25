@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>加入收件名單｜LINE 接線站</title>
+<link rel="stylesheet" href="/recipient-join.css">
+<script defer src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script defer src="/recipient-join.js"></script>
+</head>
+<body><main>
+<p id="platform">LINE 接線站</p>
+<h1>加入收件名單</h1>
+<p id="status" role="status">正在開啟 LINE 登入…</p>
+<form hidden>
+<label for="name">你的名字</label>
+<input id="name" name="name" autocomplete="name" required maxlength="80">
+<button>加入收件名單</button>
+</form>
+<a id="friend" hidden target="_blank" rel="noopener noreferrer">前往 LINE 加入好友</a>
+</main></body></html>

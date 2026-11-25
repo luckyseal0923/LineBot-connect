@@ -4,7 +4,7 @@ import { eventWebhookPath } from './external-api.mjs';
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, recipientJoin }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -199,6 +199,12 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(path==='/independent-api/recipients'&&req.method==='GET'){send(res,200,{recipients:await notifications.list(user.id,await platformBot(user))});return true;}
         if(path==='/independent-api/notifications'&&req.method==='GET'){send(res,200,{notifications:await notifications.history(user.id,await platformBot(user))});return true;}
+        if(path==='/independent-api/recipient/invite' && ['POST','GET'].includes(req.method)){
+          if(!recipientJoin){send(res,503,{error:'此環境尚未提供 QR Code 登記。'});return true;}
+          const config=await recipientJoin.settings(user.id,requestedPlatform,req.method==='POST'?await read(req):undefined);
+          send(res,config?(config.error?400:200):404,config||{error:'請先啟用此平台的 LINE Bot。'});
+          return true;
+        }
         if(path==='/independent-api/recipient/pair'&&req.method==='POST'){
           if(!await allow('pairing')||!await allow(`pairing:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
           const data=await read(req), scopedBot=await platformBot(user);

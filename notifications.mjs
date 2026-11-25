@@ -3,17 +3,18 @@ import { createLineTextSender } from './line-client.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const digest=s=>createHash('sha256').update(s).digest('hex');
 
-// The only permitted target is a user who redeemed a one-time code in this bot's signed webhook.
+export function recipientHash(key, bot, userId) {
+  return createHmac('sha256',key).update(`recipient:v1:${bot}:${userId}`).digest('hex');
+}
 export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=fetch,includeIntegrations=false}) {
  if(!db?.query||!recipientVault?.open||!tokenVault?.open||!Buffer.isBuffer(key)||key.length!==32)throw Error('Missing notification dependencies');
  const sendText=createLineTextSender({fetchImpl});
- const lineHash=(bot,id)=>createHmac('sha256',key).update(`recipient:v1:${bot}:${id}`).digest('hex');
  async function pair(account,bot,events){
   if(!uuid.test(bot||''))return;
   for(const event of events){
    const user=event?.source?.userId;
    if(event?.type==='unfollow' && event.source?.type==='user' && /^U[0-9a-f]{32}$/.test(user||'') && Number.isFinite(event.timestamp)){
-    await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where account_id=$1 and bot_id=$2 and line_hash=$3 and created_at<=to_timestamp($4::double precision/1000)",[account,bot,lineHash(bot,user),event.timestamp]);continue;
+    await db.query("update linebot_private.recipients set active=false,encrypted_line_id='{}'::jsonb where account_id=$1 and bot_id=$2 and line_hash=$3 and created_at<=to_timestamp($4::double precision/1000)",[account,bot,recipientHash(key,bot,user),event.timestamp]);continue;
    }
    const code=event?.type==='message'&&event.source?.type==='user'&&event.message?.type==='text'&&/^綁定 ([0-9a-f]{32})$/.exec(event.message.text||'');
    if(!code||!/^U[0-9a-f]{32}$/.test(user||''))continue;
@@ -23,7 +24,7 @@ export function createNotifications({db,recipientVault,tokenVault,key,fetchImpl=
      insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label)
      select $1,$2,$4,$5::jsonb,label from claimed
      on conflict(bot_id,line_hash) do update set encrypted_line_id=excluded.encrypted_line_id,label=excluded.label,active=true,created_at=now()
-     where linebot_private.recipients.account_id=excluded.account_id`,[account,bot,digest(code[1]),lineHash(bot,user),encrypted]);
+     where linebot_private.recipients.account_id=excluded.account_id`,[account,bot,digest(code[1]),recipientHash(key,bot,user),encrypted]);
   }
  }
  async function createPairing(account,bot,label){
