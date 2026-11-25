@@ -14,6 +14,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
   const botIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const webhookUrl = key => new URL(`/webhooks/line/${key}`, origin).href;
   const publicBot = bot => ({ id: bot.id, name: bot.botName, enabled: bot.enabled, webhookUrl: webhookUrl(bot.webhookKey) });
+  const lineSetupPath = '/independent-api/platforms/line-setup';
   const withEventWebhook = ({ webhookToken, ...item }) => ({
     ...item,
     webhookUrl: new URL(eventWebhookPath(item.id), origin).href,
@@ -54,14 +55,32 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         send(res,200,{username:user.username,displayName:user.display_name,status:user.status});return true;
       }
-      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path==='/independent-api/platforms/attach') {
+      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path==='/independent-api/platforms/attach' || path===lineSetupPath) {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(!platforms){send(res,503,{error:'數位平台功能尚未開放。'});return true;}
         if(req.method==='GET' && path==='/independent-api/platforms'){send(res,200,{platforms:await platforms.list(user.id)});return true;}
+        const lineSetupRequest = path === lineSetupPath;
+        if (lineSetupRequest && !botIdPattern.test(requestedPlatform || '')) {
+          send(res, 400, { error: '請先選擇要設定的數位平台。' });
+          return true;
+        }
+        if (lineSetupRequest && req.method === 'GET') {
+          const result = await platforms.getLineSetup(user.id, requestedPlatform);
+          if (result.error) send(res, 404, { error: '找不到可操作的數位平台。' });
+          else send(res, 200, result);
+          return true;
+        }
         if(req.method!=='POST'){send(res,405,{error:'請使用指定的方法。'});return true;}
         if(!await allow('platform-manage') || !await allow(`platform-manage:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
         const data=await read(req);
+        if (lineSetupRequest) {
+          const result = await platforms.saveLineSetup(user.id, requestedPlatform, data);
+          if (result.error === 'invalid') send(res, 400, { error: '請確認開設資料的格式與字數。' });
+          else if (result.error) send(res, 404, { error: '找不到可操作的數位平台。' });
+          else send(res, 200, result);
+          return true;
+        }
         const result=path.endsWith('/rename')?await platforms.rename(user.id,data.id,data.name):path.endsWith('/attach')?await platforms.attach(user.id,data.id,data.botId):await platforms.create(user.id,data.name);
         if(result.error){const messages={invalid:'請確認平台名稱及 Bot。',unavailable:'找不到可操作的平台或 Bot，或此平台已有 Bot。',bot_in_use:'此 Bot 已屬於其他平台。'};send(res,result.error==='invalid'?400:409,{error:messages[result.error]});}
         else send(res,200,result);

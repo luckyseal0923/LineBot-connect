@@ -75,7 +75,7 @@ function platformName(platform) {
 }
 
 async function api(path, { data, signal, unscoped = false } = {}) {
-  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?)(?:\?|$)/.test(path);
+  const scoped = /^(bots|bot(?:\/.*)?|recipients|recipient\/.*|notifications|notification\/.*|integrations(?:\/.*)?|platforms\/line-setup)(?:\?|$)/.test(path);
   if (currentPlatform && scoped && !unscoped) path += (path.includes('?') ? '&' : '?') + 'platform=' + encodeURIComponent(currentPlatform.id);
   const response = await fetch('/independent-api/' + path, {
     method: data === undefined ? 'GET' : 'POST',
@@ -726,15 +726,16 @@ function setupProgress(current) {
   </ol>`;
 }
 
-function wizardHeading(description) {
-  return pageHeading('設定 LINE Bot', description, buttonLink('返回 Bot 設定', '#bot', 'secondary'));
+function wizardHeading(description, action = '') {
+  const back = buttonLink('返回 Bot 設定', '#bot', 'secondary');
+  return pageHeading('設定 LINE Bot', description, action ? `<div class="button-row">${action}${back}</div>` : back);
 }
 
 function renderCredentials(signal) {
   const description = currentPlatform.botId
     ? '請使用已連結的 LINE 官方帳號更新憑證。'
     : '把這個平台專用的 LINE 官方帳號連到接線站。';
-  view.innerHTML = wizardHeading(description) +
+  view.innerHTML = wizardHeading(description, buttonLink('LINE 開設資料', '#bot?setup=profile', 'secondary')) +
     `<section class="panel wizard-panel">
       ${setupProgress(1)}
       <h2>填寫 LINE 憑證</h2>
@@ -815,13 +816,71 @@ function renderTestStep(bot) {
     </section>`;
 }
 
+async function renderLineSetup(signal) {
+  const endpoint = 'platforms/line-setup';
+  const fields = [
+    ['accountName', 'LINE 官方帳號名稱', 80],
+    ['organization', '公司或事業者名稱', 120],
+    ['region', '公司所在國家或地區', 80],
+    ['contactEmail', '業務聯絡電子郵件', 254, 'email'],
+    ['industry', '業種（主類別）', 80],
+    ['subIndustry', '業種（子類別）', 80],
+    ['providerName', '服務提供者名稱（Provider）', 100]
+  ];
+  view.innerHTML = pageHeading('LINE 開設資料', '先填好這個平台的官方帳號資料，之後可讓 AI 代填 LINE 申請表。',
+    buttonLink('返回 Bot 設定', '#bot', 'secondary')) +
+    '<section class="panel line-setup-panel" id="line-setup-panel"><p class="page-loading" role="status">正在載入開設資料…</p></section>';
+  const panel = view.querySelector('#line-setup-panel');
+  let details;
+  try {
+    ({ lineSetup: details } = await api(endpoint, { signal }));
+  } catch (error) {
+    if (!signal.aborted) showPageError(panel, error.message);
+    return;
+  }
+  if (signal.aborted) return;
+  panel.innerHTML = `<form id="line-setup-form" class="form-stack">
+    <div class="line-setup-fields">
+      ${fields.map(([name, label, limit, type = 'text']) => `<label>${label}
+        <input type="${type}" name="${name}" maxlength="${limit}" value="${escapeHtml(details[name])}">
+      </label>`).join('')}
+      <label class="line-setup-purpose">使用目的
+        <textarea name="purpose" rows="3" maxlength="240">${escapeHtml(details.purpose)}</textarea>
+      </label>
+    </div>
+    <div class="button-row"><button type="submit" class="button button-primary">儲存開設資料</button></div>
+    <p class="feedback" role="status"></p>
+  </form>`;
+  const form = panel.querySelector('form');
+  const button = form.querySelector('button');
+  const feedback = form.querySelector('.feedback');
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (button.disabled) return;
+    button.disabled = true;
+    report(feedback, '正在儲存…');
+    try {
+      const { lineSetup } = await api(endpoint, { data: Object.fromEntries(new FormData(form)), signal });
+      if (signal.aborted) return;
+      for (const field of form.querySelectorAll('input, textarea')) field.value = lineSetup[field.name] || '';
+      report(feedback, '已儲存開設資料。', 'success');
+    } catch (error) {
+      if (!signal.aborted) report(feedback, error.message, 'danger');
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 async function renderBots(params, signal) {
   const step = params.get('setup');
+  if (step === 'profile') return renderLineSetup(signal);
   if (step === '1') {
     renderCredentials(signal);
     return;
   }
-  view.innerHTML = pageHeading('LINE Bot 設定', '設定這個平台的 LINE 官方帳號與 Webhook。') +
+  view.innerHTML = pageHeading('LINE Bot 設定', '設定這個平台的 LINE 官方帳號與 Webhook。',
+    buttonLink('LINE 開設資料', '#bot?setup=profile', 'secondary')) +
     '<div id="bot-list"><p class="page-loading" role="status">正在載入 LINE Bot…</p></div>';
 
   const list = view.querySelector('#bot-list');

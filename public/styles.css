@@ -309,7 +309,7 @@ html[data-auth="active"] .workspace-shell:has(> .sidebar[hidden]) > .workspace-c
   gap: .83rem;
   margin-top: .95rem;
 }
-.form-stack > :is(label, .field), .filters > label {
+.form-stack > :is(label, .field), .filters > label, .line-setup-fields > label {
   width: 100%;
   min-width: 0;
   display: grid;
@@ -467,6 +467,13 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .help-block p { padding-block: .17rem .48rem; }
 .wizard-panel { max-width: 54rem; }
 .wizard-panel .form-stack { max-width: 37rem; }
+.line-setup-panel { max-width: 62rem; }
+.line-setup-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .85rem 1rem;
+}
+.line-setup-purpose { grid-column: 1 / -1; }
 .wizard-panel h2 + p { margin-top: .58rem; }
 .wizard-progress {
   display: grid;

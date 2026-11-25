@@ -25,6 +25,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(await hasExternalIntegrationSchema(db), false);
     await db.exec(await readFile(new URL('./db/015_external_integrations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/017_platform_services.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('./db/018_line_setup_details.sql', import.meta.url), 'utf8'));
     assert.equal(await hasExternalIntegrationSchema(db), true);
     assert.equal((await db.query('select value from other_platform.records')).rows[0].value, 'unchanged');
 
@@ -151,6 +152,28 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.ok(!(await (await portal('b', scopedWebhook)).text()).includes(privateWebhookUrl));
     const otherPlatform=await (await portal('a','/independent-api/platforms',{name:'教具平台'})).json();
     assert.equal((await portal('a','/independent-api/platforms/attach',{id:otherPlatform.id,botId:secondBot})).status,200);
+
+    const setupPath = '/independent-api/platforms/line-setup';
+    const setupA = setupPath + '?platform=' + service.id;
+    const setupB = setupPath + '?platform=' + otherPlatform.id;
+    assert.equal((await portal('x', setupA)).status, 401);
+    assert.equal((await portal('p', setupA)).status, 403);
+    assert.equal((await portal('a', setupPath)).status, 400);
+    assert.deepEqual(await (await portal('a', setupA)).json(), { lineSetup: {} });
+    const details = { accountName: '課程通知', contactEmail: 'setup@example.test', providerName: '課程平台測試' };
+    const savedSetup = await portal('a', setupA, { ...details, accountName: ' 課程通知 ' });
+    assert.equal(savedSetup.status, 200);
+    assert.deepEqual(await savedSetup.json(), { lineSetup: details });
+    assert.equal((await portal('b', setupA)).status, 404);
+    assert.equal((await portal('b', setupA, { accountName: '其他帳號' })).status, 404);
+    assert.equal((await portal('a', setupA, details, 'https://other.invalid')).status, 403);
+    assert.equal((await portal('a', setupA, { channelSecret: 'synthetic credential' })).status, 400);
+    assert.deepEqual(await (await portal('a', setupA)).json(), { lineSetup: details });
+    assert.deepEqual(await (await portal('a', setupB)).json(), { lineSetup: {} });
+    assert.equal((await (await portal('a', '/independent-api/platforms')).text()).includes(details.contactEmail), false);
+    const clearedSetup = await portal('a', setupA, {});
+    assert.equal(clearedSetup.status, 200);
+    assert.deepEqual(await clearedSetup.json(), { lineSetup: {} });
     const otherRoute=await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`,{recipientId:secondRecipient,name:'借用'})).json();
     const routesA=(await (await portal('a',`${adminPath}?platform=${service.id}`)).json()).integrations;
     const routesB=(await (await portal('a',`${adminPath}?platform=${otherPlatform.id}`)).json()).integrations;
