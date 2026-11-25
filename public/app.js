@@ -1000,7 +1000,10 @@ async function renderRecipientInvite(panel, signal) {
   catch(error) { if(!signal.aborted) showPageError(panel,error.message); return; }
   if(signal.aborted) return;
   function draw() {
-    panel.innerHTML = `${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
+    panel.innerHTML = `${config.basicId
+      ? copyField('recipient-bot-id','LINE 官方帳號 ID（加入好友用）',config.basicId,'複製 ID')
+      : '<p class="muted">目前無法取得 LINE 官方帳號 ID。</p>'}
+      ${config.qr ? `<p>請收件者用手機相機掃碼，以 LINE 登入並填寫名字。</p>
       <img class="invite-qr" width="230" height="230" alt="收件者登記 QR Code" src="${escapeHtml(config.qr)}">
       ${copyField('invite-url','收件者邀請連結',config.url,'複製連結')}` : '<p>首次使用請先設定此 Bot 的 LINE 登入，完成後即可分享 QR Code。</p>'}
       <details class="help-block" ${config.qr ? '' : 'open'}><summary>設定 LINE 登入</summary>

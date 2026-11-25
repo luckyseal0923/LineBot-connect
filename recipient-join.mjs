@@ -31,7 +31,15 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
       row.liff = liff;
     }
     const url = row.liff ? 'https://liff.line.me/' + row.liff + '?invite=' + invitation(id,row) : '';
-    return { endpoint: new URL('/join/' + id, publicOrigin).href, liffId: row.liff || '', url,
+    let basicId = '';
+    try {
+      const token = tokenVault.open(row.account_id, row.encrypted_access_token);
+      const info = await lineJson('https://api.line.me/v2/bot/info', token);
+      basicId = info?.basicId || '';
+    } catch {
+      // The invitation remains usable when LINE cannot supply the public ID.
+    }
+    return { basicId, endpoint: new URL('/join/' + id, publicOrigin).href, liffId: row.liff || '', url,
       qr: url ? await QRCode.toDataURL(url, { width: 260, margin: 4 }) : '' };
   }
   async function lineJson(url, token) {
