@@ -836,7 +836,7 @@ async function renderLineSetup(signal) {
   const region = details.region || '台灣';
   const profileUrl = new URL(platformLink('bot?setup=profile', currentPlatform), location.href);
   const guideUrl = new URL('/line-bot-setup.md', location.origin);
-  const setupPrompt = `請依照 ${guideUrl.href} 的開設步驟，使用 Computer Use 開啟 ${profileUrl.href}，讀取這個平台已儲存的開設資料。請協助我申請 LINE 官方帳號、啟用 Messaging API、連上這個平台並驗證 Webhook。登入與身分驗證由我操作。請將憑證直接填入接線站，回報驗證結果即可。`;
+  const setupPrompt = `請先確認這次對話已啟用 Computer Use（瀏覽器操作），用該工具開啟 ${profileUrl.href}。若無法操作，請先告訴我原因，引導我開啟或授權，等我回覆後再用工具確認。可以操作後，請依照 ${guideUrl.href} 的開設步驟，讀取這個平台已儲存的開設資料。請協助我申請 LINE 官方帳號、啟用 Messaging API、連上這個平台並驗證 Webhook。登入與身分驗證由我操作。請將憑證直接填入接線站，回報驗證結果即可。`;
   panel.innerHTML = `<form id="line-setup-form" class="form-stack">
     <div class="line-setup-fields">
       <label>LINE 機器人名稱
@@ -873,7 +873,7 @@ async function renderLineSetup(signal) {
   </form>
   <section class="ai-setup-handoff" aria-labelledby="ai-handoff-title" ${details.providerName ? '' : 'hidden'}>
     <h2 id="ai-handoff-title">交給 AI 繼續設定</h2>
-    <p>複製下方指令，貼給可以操作瀏覽器的 AI。它會開啟這個平台的資料，並在需要登入 LINE 時請你接手。</p>
+    <p>把下方指令貼給你的 AI。它會先確認這次對話能操作瀏覽器，需要時會提示你開啟 Computer Use，再協助設定 LINE。</p>
     ${copyField('line-setup-prompt', '給 AI 的指令', setupPrompt, '複製指令')}
   </section>`;
   bindCopyFields(panel);
