@@ -153,7 +153,7 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if (req.method === 'GET' && !integrationAction) {
           const scopedBot = await platformBot(user);
           const includeWebhook = Boolean(scopedBot) && requestUrl.searchParams.get('webhooks') === '1';
-          const items = await integrations.list(user.id, scopedBot, includeWebhook);
+          const items = await integrations.list(user.id, scopedBot, includeWebhook, requestedPlatform);
           send(res, 200, { integrations: items.map(withEventWebhook), endpoint: new URL('/api/v1/send', origin).href });
           return true;
         }
@@ -171,14 +171,14 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         const id = integrationAction?.[1];
         if (!action) {
           const input=await read(req);
-          if(scopedBot && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===input.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
-          result = await integrations.create(user.id, input, scopedBot);
+          if(scopedBot && input.recipientId && !(await notifications.list(user.id,scopedBot)).some(r=>r.id===input.recipientId)){send(res,403,{error:'收件對象不屬於此平台。'});return true;}
+          result = await integrations.create(user.id, input, scopedBot, requestedPlatform);
         }
         else if (action === 'delete') {
           if (!scopedBot) { send(res,400,{error:'請先選擇事件所屬的平台。'});return true; }
-          result = await integrations.remove(user.id, id, scopedBot);
+          result = await integrations.remove(user.id, id, scopedBot, requestedPlatform);
         }
-        else if (scopedBot && !(await integrations.list(user.id,scopedBot)).some(item=>item.id===id)) {send(res,404,{error:'找不到此平台的串接。'});return true;}
+        else if (scopedBot && !(await integrations.list(user.id,scopedBot,false,requestedPlatform)).some(item=>item.id===id)) {send(res,404,{error:'找不到此平台的串接。'});return true;}
         else if (action === 'edit') result = await integrations.edit(user.id, id, await read(req));
         else if (action === 'test') result = await integrations.testSend(user.id, id, (await read(req))?.eventKey);
         else result = await integrations.manage(user.id, id, action);

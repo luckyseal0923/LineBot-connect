@@ -360,6 +360,7 @@ function renderHistory(target, records, limit = records.length) {
 function integrationStatus(item) {
   if (!item.keyTail) return ['Webhook 已撤銷', 'neutral'];
   if (!item.enabled) return ['已停用', 'neutral'];
+  if (!item.recipients.length) return ['收件者待設定', 'warning'];
   return item.targetReady ? ['啟用中', 'success'] : ['收件者或 Bot 無法使用', 'warning'];
 }
 
@@ -402,7 +403,7 @@ async function renderOverview(signal) {
   let nextAction;
   if (!platform.botEnabled) nextAction = ['設定 LINE Bot', '連結並啟用 Bot 後，就能邀請收件者完成配對。', '#bot'];
   else if (recipients && !recipients.length) nextAction = ['邀請第一位收件者', '到收件對象頁面分享邀請 QR Code。', '#recipients'];
-  else if (recipients && integrations && !integrations.length) nextAction = ['建立第一組事件串接', '為事件指定收件者，並取得專用 Webhook 網址。', '#integrations'];
+  else if (recipients && integrations && !integrations.length) nextAction = ['建立第一組事件串接', '先建立事件取得 Webhook 網址，再指定收件者。', '#integrations'];
   if (nextAction) {
     const [label, description, destination] = nextAction;
     next.innerHTML = `<section class="next-card" aria-labelledby="next-heading">
@@ -423,12 +424,9 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     person.id, {label:person.label, paired:true, assigned:false}
   ]));
   const routes = (integrations || []).map(item => {
-    const person = people.get(item.recipientId);
-    people.set(item.recipientId, {
-      label: person?.label || item.recipientLabel,
-      paired: person?.paired || item.targetReady,
-      assigned: true
-    });
+    for (const person of item.recipients) {
+      people.set(person.id, {label:person.label,paired:person.active,assigned:true});
+    }
     const [label, tone] = integrationStatus(item);
     return { item, label, tone, ready: tone === 'success' };
   });
@@ -448,7 +446,7 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
         ${routes.map(({ item, label, tone }) => `<button type="button" class="route-node route-integration" aria-pressed="false">
           <span class="route-event-name"><strong>${escapeHtml(integrationName(item))}</strong>
             ${!item.eventName ? '<small>舊名稱待確認</small>' : ''}</span>
-          ${chip(label, tone)}<span class="sr-only">，設定的收件者為 ${escapeHtml(item.recipientLabel)}</span>
+          ${chip(label, tone)}<span class="sr-only">，設定的收件者為 ${escapeHtml(item.recipientLabel || '待設定')}</span>
         </button>`).join('')}
       </div>
       <div class="route-column"><h3>收件者</h3>
@@ -493,7 +491,9 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     const drawRoute = index => {
       const { item, ready } = routes[index];
       line(source, buttons[index], ready, selected === index);
-      line(buttons[index], personNodes.get(item.recipientId), ready, selected === index);
+      for (const person of item.recipients) {
+        line(buttons[index], personNodes.get(person.id), ready && person.active, selected === index);
+      }
     };
     routes.forEach((_, index) => { if (index !== selected) drawRoute(index); });
     if (selected >= 0) drawRoute(selected);
@@ -504,8 +504,8 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
     buttons.forEach((item, key) => item.setAttribute('aria-pressed', String(key === selected)));
     const route = routes[selected];
     source.classList.toggle('is-highlighted', Boolean(route));
-    for (const [id, node] of personNodes) node.classList.toggle('is-highlighted', id === route?.item.recipientId);
-    description.textContent = route ? `${integrationName(route.item)} → ${route.item.recipientLabel}（${route.label}）` : '';
+    for (const [id, node] of personNodes) node.classList.toggle('is-highlighted', Boolean(route?.item.recipients.some(person=>person.id===id)));
+    description.textContent = route ? `${integrationName(route.item)} → ${route.item.recipientLabel || '收件者待設定'}（${route.label}）` : '';
     draw();
   }));
   const observer = new ResizeObserver(draw);
@@ -1306,7 +1306,6 @@ async function renderRecipients(signal) {
 }
 
 async function renderIntegrations(signal) {
-  const platform = currentPlatform;
   view.innerHTML = pageHeading('事件串接', '將事件的專屬 Webhook 網址貼到數位平台。事件發生時，接線站會通知設定的收件者。',
     `<div class="button-row">
       <a href="/connection-guide" class="button button-secondary" target="_blank" rel="noopener">Webhook 串接指南</a>
@@ -1324,13 +1323,17 @@ async function renderIntegrations(signal) {
   }
   if (signal.aborted) return;
   const path = 'integrations';
-  const recipientOptions = selected => option('', '請選擇收件對象') + recipients.map(recipient =>
-    `<option value="${escapeHtml(recipient.id)}"${recipient.id === selected ? ' selected' : ''}>${escapeHtml(recipient.label)}</option>`
-  ).join('');
-  const fields = (name, recipientId) => `
-    <label>觸發事件名稱<input name="name" required maxlength="80" value="${escapeHtml(name)}" placeholder="例如 新增課程報名"></label>
-    <label>收件對象<select name="recipientId" required>${recipientOptions(recipientId)}</select></label>`;
-  const firstRecipient = recipients.length === 1 ? recipients[0].id : '';
+  const nameField = name => `<label>觸發事件名稱<input name="name" required maxlength="80"
+    value="${escapeHtml(name)}" placeholder="例如 新增課程報名"></label>`;
+  function recipientFields(item) {
+    const checked=new Set(item.recipients.map(person=>person.id));
+    const options=new Map([...recipients,...item.recipients].map(person=>[person.id,person]));
+    return `<fieldset class="event-recipients"><legend>收件對象（可複選）</legend>
+      ${[...options.values()].map(person=>`<label><input type="checkbox" name="recipientIds"
+        value="${escapeHtml(person.id)}"${checked.has(person.id) ? ' checked' : ''}>
+        ${escapeHtml(person.label)}${person.active===false ? '（已停用）' : ''}</label>`).join('') ||
+        buttonLink('邀請收件者', '#recipients', 'secondary')}</fieldset>`;
+  }
   function webhookSettings(prefix, url) {
     return `
       ${copyField(prefix + '-url', 'Webhook 網址（POST）', url, '複製網址')}
@@ -1349,12 +1352,10 @@ async function renderIntegrations(signal) {
       </section>
       <section class="panel" aria-labelledby="integration-create-title">
         <h2 id="integration-create-title">新增事件串接</h2>
-        ${recipients.length ? `<form id="integration-create" class="form-stack">
-          ${fields('', firstRecipient)}
+        <form id="integration-create" class="form-stack">
+          ${nameField('')}
           <button type="submit" class="button button-primary">建立 Webhook</button>
-        </form>` : platform.botEnabled
-          ? emptyState('先配對收件者', '完成 LINE 配對後即可建立 Webhook。', buttonLink('前往配對', '#recipients'))
-          : emptyState('先啟用平台的 LINE Bot', '啟用並配對收件者後即可建立 Webhook。', buttonLink('前往 Bot 設定', '#bot'))}
+        </form>
       </section>
     </div>`;
 
@@ -1362,12 +1363,13 @@ async function renderIntegrations(signal) {
   const feedback = workspace.querySelector('#integration-feedback');
   const secret = workspace.querySelector('#integration-secret');
   const testKeys = new Map();
+  let openEventId;
   let items = initial.integrations;
   let busy = false;
 
   function renderList() {
     if (!items.length) {
-      list.innerHTML = emptyState('尚未建立串接', '選好事件名稱與收件者後，就能複製 Webhook 網址。');
+      list.innerHTML = emptyState('尚未建立串接', '先輸入事件名稱，建立後再指定收件者。');
       return;
     }
     list.innerHTML = items.map(item => {
@@ -1378,7 +1380,7 @@ async function renderIntegrations(signal) {
         <div class="section-heading"><h3 tabindex="-1">${escapeHtml(integrationName(item))}</h3>${chip(...status)}</div>
         ${!item.eventName ? '<p class="muted small">沿用舊名稱，請確認觸發事件。</p>' : ''}
         <div class="integration-meta small">
-          <span>收件者 <strong>${escapeHtml(item.recipientLabel)}</strong></span>
+          <span>收件者 <strong>${escapeHtml(item.recipientLabel || '待設定')}</strong></span>
         </div>
         <div class="integration-actions">
           ${item.privateWebhookUrl ? `<details class="action-menu integration-webhook">
@@ -1386,10 +1388,10 @@ async function renderIntegrations(signal) {
             ${webhookSettings('event-' + item.id, item.privateWebhookUrl)}
           </details>` : ''}
           ${action('test', '發送測試', status[1] !== 'success', 'secondary')}
-          <details class="action-menu integration-edit"><summary>管理事件</summary>
-            ${recipients.length ? `<form class="form-stack">${fields(integrationName(item), item.recipientId)}
+          <details class="action-menu integration-edit"${item.id === openEventId ? ' open' : ''}><summary>設定收件者與管理事件</summary>
+            <form class="form-stack">${nameField(integrationName(item))}${recipientFields(item)}
               <button class="button button-secondary" type="submit">儲存串接設定</button>
-            </form>` : ''}
+            </form>
             <div class="button-row">
               ${item.enabled ? action('disable', '停用串接') : action('enable', '啟用串接', !item.targetReady || !item.keyTail)}
               ${action('rotate', item.keyTail ? '換發網址' : '產生新網址')}
@@ -1444,7 +1446,7 @@ async function renderIntegrations(signal) {
       const result = await api(route, { data, signal });
       if (signal.aborted) return;
       if (result.privateWebhookUrl) showWebhook(result);
-      after?.();
+      after?.(result);
       report(feedback, success, 'success');
       try { await refreshList(); }
       catch { if (!signal.aborted) report(feedback, `${success} 請重新查詢清單。`, 'warning'); }
@@ -1460,13 +1462,18 @@ async function renderIntegrations(signal) {
   createForm?.addEventListener('submit', event => {
     event.preventDefault();
     change(createForm.querySelector('button'), path, Object.fromEntries(new FormData(createForm)),
-      'Webhook 已建立。', () => createForm.reset());
+      'Webhook 已建立。請勾選收件者並儲存。', result => {
+        createForm.reset();
+        openEventId = result.id;
+      });
   });
   list.addEventListener('submit', event => {
     event.preventDefault();
     const form = event.target;
     const id = form.closest('[data-integration-id]').dataset.integrationId;
-    change(form.querySelector('button'), `${path}/${id}/edit`, Object.fromEntries(new FormData(form)), '已儲存串接設定。');
+    const data=new FormData(form);
+    change(form.querySelector('[type="submit"]'), `${path}/${id}/edit`,
+      {name:data.get('name'),recipientIds:data.getAll('recipientIds')}, '已儲存事件與收件對象。');
   });
   list.addEventListener('click', async event => {
     const button = event.target.closest('[data-integration-action]');
@@ -1478,7 +1485,7 @@ async function renderIntegrations(signal) {
       test: ['發送測試通知', `「${item.botName}」將傳送測試通知給「${item.recipientLabel}」。`, '確認發送', 'primary'],
       disable: ['停用事件串接', '等候發送的通知將取消。', '確認停用', 'danger'],
       rotate: [item.keyTail ? '換發網址' : '產生新網址', '換發會讓舊網址與舊金鑰失效。請把新網址貼到數位平台。', '確認換發', 'primary'],
-      delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel}）？刪除後無法復原，原 Webhook 網址與金鑰會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],
+      delete: ['刪除事件', `確定刪除「${integrationName(item)}」（收件者：${item.recipientLabel || '待設定'}）？刪除後無法復原，原 Webhook 網址與金鑰會失效。既有發送紀錄會保留。`, '確認刪除', 'danger'],
       revoke: ['撤銷 Webhook', '撤銷會讓這個事件的網址與金鑰失效。', '確認撤銷', 'danger']
     };
     if (confirmation[action]) {

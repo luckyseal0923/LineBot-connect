@@ -27,6 +27,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     await db.exec(await readFile(new URL('./db/017_platform_services.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/018_line_setup_details.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/020_delete_integration.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('./db/021_event_recipients.sql', import.meta.url), 'utf8'));
     assert.equal(await hasExternalIntegrationSchema(db), true);
     assert.equal((await db.query('select value from other_platform.records')).rows[0].value, 'unchanged');
 

@@ -742,3 +742,8 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .pager { display: flex; align-items: center; justify-content: flex-end; gap: .54rem; margin-top: .8rem; }
 
 .invite-qr { display: block; max-width: 100%; height: auto; margin: .85rem auto; }
+
+.event-recipients { min-width: 0; margin: 0; padding: .6rem .8rem; border: 1px solid var(--border); border-radius: .5rem; }
+.event-recipients legend { font-weight: 650; }
+.event-recipients label { display: flex; align-items: center; gap: .5rem; padding: .25rem 0; }
+.event-recipients input[type="checkbox"] { width: 1rem; height: 1rem; min-height: 0; margin: 0; accent-color: var(--deep); }

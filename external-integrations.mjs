@@ -25,40 +25,63 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     join linebot_private.accounts a on a.id=r.account_id
     where r.id=$2 and r.account_id=$1 and r.active and b.enabled and a.status='active'`;
 
-  async function list(accountId, botId = null, includeWebhook = false) {
-    const { rows } = await db.query(`select i.id, i.name, i.enabled, i.key_tail as "keyTail", case when $3 then i.key_hash end as "keyHash",
-      i.recipient_id as "recipientId", b.id as "botId", b.bot_name as "botName", i.event_name as "eventName", r.label as "recipientLabel",
-      (r.active and b.enabled) as "targetReady", i.created_at as "createdAt"
-      from linebot_private.integrations i
-      join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
-      join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
-      where i.deleted_at is null and i.account_id=$1 and ($2::uuid is null or b.id=$2::uuid) order by i.created_at desc, i.id`, [accountId, botId, includeWebhook]);
-    return rows.map(({ keyHash, ...item }) => keyHash
-      ? { ...item, webhookToken: tokenFor(item.id, keyHash) } : item);
+  const eventBotJoins = `left join linebot_private.platform_services p on p.id=i.platform_id and p.account_id=i.account_id
+      left join linebot_private.recipients original on original.id=i.recipient_id and original.account_id=i.account_id
+      left join linebot_private.bot_credentials b on b.id=(case when i.platform_id is null then original.bot_id else p.bot_id end) and b.account_id=i.account_id`;
+  const assigned = 'array_remove(array_prepend(i.recipient_id,i.extra_recipient_ids),null)';
+
+  async function list(accountId, botId = null, includeWebhook = false, platformId = null) {
+    const { rows } = await db.query(`select i.id,i.name,i.enabled,i.key_tail as "keyTail",case when $3 then i.key_hash end as "keyHash",
+      i.recipient_id as "recipientId",b.id as "botId",b.bot_name as "botName",i.event_name as "eventName",
+      targets.people as recipients,targets.ready as "targetReady",i.created_at as "createdAt"
+      from linebot_private.integrations i ${eventBotJoins}
+      cross join lateral (select coalesce(jsonb_agg(jsonb_build_object('id',r.id,'label',r.label,'active',r.active)
+        order by r.label,r.id),'[]') as people,coalesce(bool_or(r.active and b.enabled),false) as ready
+        from linebot_private.recipients r where r.account_id=i.account_id and r.bot_id=b.id and r.id=any(${assigned})) targets
+      where i.deleted_at is null and i.account_id=$1 and ($2::uuid is null or i.platform_id=$4::uuid or (b.id=$2 and (i.platform_id is null or $4 is null)))
+      order by i.created_at desc,i.id`,[accountId,botId,includeWebhook,platformId]);
+    return rows.map(({keyHash,...item}) => ({
+      ...item, recipientLabel:item.recipients.map(person=>person.label).join('、'),
+      ...(keyHash && {webhookToken:tokenFor(item.id,keyHash)})
+    }));
   }
 
-  async function create(accountId, input, botId = null) {
+  async function create(accountId, input, botId = null, platformId = null) {
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
-    if (!name || name.length > 80 || !externalIdPattern.test(input?.recipientId || '')) return { error: 'invalid' };
-
+    const recipientId = input?.recipientId;
+    if (!name || name.length>80 || (recipientId ? !externalIdPattern.test(recipientId) : !platformId)) return {error:'invalid'};
     const id = randomUUID();
     const apiKey = 'lbc_' + randomBytes(32).toString('base64url');
     const keyHash = digest(apiKey);
-    const { rows } = await db.query(`insert into linebot_private.integrations(id,account_id,recipient_id,name,key_hash,key_tail,event_name)
-      select $6,r.account_id,r.id,$3,$4,$5,$3 ${eligibleRecipients} and ($7::uuid is null or b.id=$7::uuid)
-      on conflict(id) do nothing returning id`,
-    [accountId, input.recipientId, name, keyHash, apiKey.slice(-6), id, botId]);
+    // Existing clients may still provide a single recipient when creating an event.
+    const source = recipientId
+      ? `select $1::uuid,r.id,$3::uuid ${eligibleRecipients} and ($4::uuid is null or b.id=$4)`
+      : `select p.account_id,null::uuid,p.id from linebot_private.platform_services p
+         where p.id=$3 and p.account_id=$1 and $2::uuid is null and $4::uuid is not null`;
+    const {rows}=await db.query(`with target(account_id,recipient_id,platform_id) as (${source})
+      insert into linebot_private.integrations(id,account_id,recipient_id,platform_id,name,event_name,key_hash,key_tail)
+      select $5,account_id,recipient_id,platform_id,$6,$6,$7,$8 from target returning id`,
+      [accountId,recipientId || null,platformId,botId,id,name,keyHash,apiKey.slice(-6)]);
     return rows.length ? { id, apiKey, webhookToken: tokenFor(id, keyHash) } : { error: 'target_unavailable' };
   }
 
   async function edit(accountId, id, input) {
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
-    if (!name || name.length > 80 || !externalIdPattern.test(input?.recipientId || '')) return { error: 'invalid' };
-
-    const result = await db.query(`update linebot_private.integrations i set name=$3,event_name=$3,recipient_id=$2,
-      revision=i.revision + case when i.recipient_id<>$2 then 1 else 0 end
-      where i.deleted_at is null and i.account_id=$1 and i.id=$4 and exists (select 1 ${eligibleRecipients} and r.bot_id=(select prior.bot_id from linebot_private.recipients prior where prior.id=i.recipient_id and prior.account_id=i.account_id)) returning i.id`,
-    [accountId, input.recipientId, name, id]);
+    const raw = input?.recipientIds ?? (input?.recipientId ? [input.recipientId] : null);
+    if (!name || name.length>80 || !Array.isArray(raw) || raw.some(id=>typeof id!=='string' || !externalIdPattern.test(id))) return {error:'invalid'};
+    const ids=[...new Set(raw.map(id=>id.toLowerCase()))].sort();
+    const result=await db.query(`with context as (
+      select i.id,b.id as bot_id,coalesce(p.id,legacy.id) as platform_id
+      from linebot_private.integrations i ${eventBotJoins}
+      left join linebot_private.platform_services legacy on legacy.bot_id=b.id and legacy.account_id=i.account_id
+      where i.id=$2 and i.account_id=$1 and i.deleted_at is null for update of i
+    ) update linebot_private.integrations i set name=$3,event_name=$3,platform_id=c.platform_id,
+      recipient_id=($4::uuid[])[1],extra_recipient_ids=($4::uuid[])[2:],
+      revision=i.revision + case when ${assigned}=$4 then 0 else 1 end
+      from context c where i.id=c.id and (c.platform_id is not null or cardinality($4::uuid[])>0)
+      and cardinality($4::uuid[])=(select count(*) from linebot_private.recipients r
+        where r.account_id=$1 and r.bot_id=c.bot_id and r.id=any($4) and (r.active or r.id=any(${assigned})))
+      returning i.id`,[accountId,id,name,ids]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
 
@@ -83,18 +106,18 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
       where i.deleted_at is null and i.id=$1 and i.account_id=$2 and (not $3::boolean or (
         i.key_hash is not null and exists (select 1 from linebot_private.recipients r
           join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=r.account_id
-          where r.id=i.recipient_id and r.account_id=i.account_id and r.active and b.enabled)))
+          where r.id=any(${assigned}) and r.account_id=i.account_id and r.active and b.enabled)))
       returning i.id`, [id, accountId, enabled]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
 
-  async function remove(accountId, id, botId) {
+  async function remove(accountId, id, botId, platformId = null) {
     const result = await db.query(`update linebot_private.integrations i
       set deleted_at=now(), enabled=false, key_hash=null, key_tail=null, revision=i.revision+1
-      from linebot_private.recipients r
-      where i.id=$1 and i.account_id=$2 and i.deleted_at is null
-        and r.id=i.recipient_id and r.account_id=i.account_id and r.bot_id=$3
-      returning i.id`, [id, accountId, botId]);
+      where i.id=$1 and i.account_id=$2 and i.deleted_at is null and
+        (i.platform_id=$4::uuid or ((i.platform_id is null or $4 is null) and exists(select 1 from linebot_private.recipients r
+          where r.id=i.recipient_id and r.account_id=i.account_id and r.bot_id=$3)))
+      returning i.id`, [id, accountId, botId, platformId]);
     return result.rowCount ? { id } : { error: 'unavailable' };
   }
 
@@ -121,7 +144,10 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   async function readSubmission(access, { requestHash = null, messageId = null }) {
     const { rows } = await db.query(`select n.id as "messageId",n.status,n.line_status as "lineStatus",
       n.created_at as "createdAt",n.completed_at as "completedAt",j.line_message_id as "lineMessageId",
-      j.error_code as "errorCode",j.message_hash as "messageHash"
+      j.error_code as "errorCode",j.message_hash as "messageHash",
+      (select jsonb_agg(jsonb_build_object('messageId',n2.id,'status',n2.status) order by n2.id)
+       from linebot_private.integration_jobs j2 join linebot_private.notifications n2 on n2.id=j2.notification_id
+       where j2.batch_id=j.notification_id and j2.integration_id=j.integration_id having count(*)>1) as deliveries
       from linebot_private.integration_jobs j
       join linebot_private.notifications n on n.id=j.notification_id
       join linebot_private.integrations i on i.id=j.integration_id and i.account_id=n.account_id
@@ -133,8 +159,12 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
   }
 
   function submissionResult(row) {
-    const { messageHash, ...result } = row;
-    return result;
+    const { messageHash, deliveries, ...result } = row;
+    if (!deliveries) return result;
+    const states=deliveries.map(delivery=>delivery.status);
+    const status=states.every(state=>state===states[0]) ? states[0]
+      : states.some(state=>state==='sending' || state==='queued') ? 'sending' : 'partial';
+    return {messageId:result.messageId,createdAt:result.createdAt,status,deliveries};
   }
 
   async function enqueue(access, eventKey, message) {
@@ -155,26 +185,39 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
         !await allow(`external-integration:${access.id}`)) return { error: 'rate_limited' };
 
     const encryptedMessage = JSON.stringify(messageVault.seal(access.accountId, message));
-    // The unique job insert reserves the event key, and both records commit in one statement.
-    const { rows } = await db.query(`with target as (
+    // Reserve the external event key once before inserting any sibling deliveries.
+    const rootId=randomUUID();
+    const {rows}=await db.query(`with event as (
+        select i.* from linebot_private.integrations i join linebot_private.accounts a on a.id=i.account_id
+        where i.id=$1 and i.account_id=$2 and i.key_hash=$3 and i.enabled and a.status='active' for share of i
+      ), targets as (
         select i.id,i.revision,i.name,i.account_id,r.id as recipient_id,r.bot_id
-        from linebot_private.integrations i
-        join linebot_private.recipients r on r.id=i.recipient_id and r.account_id=i.account_id
-        join linebot_private.bot_credentials b on b.id=r.bot_id and b.account_id=i.account_id
-        join linebot_private.accounts a on a.id=i.account_id
-        where i.id=$1 and i.account_id=$2 and i.key_hash=$3 and i.enabled and r.active and b.enabled and a.status='active'
-        for share of i
+        from event i ${eventBotJoins} join linebot_private.recipients r
+          on r.id=any(${assigned}) and r.account_id=i.account_id and r.bot_id=b.id
+        where r.active and b.enabled
+      ), deliveries as materialized (
+        select t.*,case when row_number() over(order by recipient_id)=1 then $4::uuid else gen_random_uuid() end as delivery_id
+        from targets t
       ), reserved as (
         insert into linebot_private.integration_jobs
-          (notification_id,integration_id,integration_revision,source_name,request_hash,message_hash,encrypted_message)
-        select $4,id,revision,name,$5,$6,$7::jsonb from target
+          (notification_id,integration_id,integration_revision,source_name,request_hash,message_hash,encrypted_message,batch_id)
+        select delivery_id,id,revision,name,$5,$6,$7::jsonb,$4 from deliveries where delivery_id=$4
         on conflict(integration_id,request_hash) do nothing returning notification_id
+      ), siblings as (
+        insert into linebot_private.integration_jobs
+          (notification_id,integration_id,integration_revision,source_name,request_hash,message_hash,encrypted_message,batch_id)
+        select delivery_id,id,revision,name,encode(sha256(convert_to('/delivery/' || delivery_id::text,'UTF8')),'hex'),$6,$7::jsonb,$4
+        from deliveries cross join reserved where delivery_id<>$4 returning notification_id
       )
       insert into linebot_private.notifications(id,account_id,bot_id,recipient_id,status)
-      select reserved.notification_id,target.account_id,target.bot_id,target.recipient_id,'queued' from reserved cross join target
+      select delivery_id,account_id,bot_id,recipient_id,'queued' from deliveries
+      where delivery_id in (select notification_id from reserved union all select notification_id from siblings)
       returning id as "messageId",status,created_at as "createdAt"`,
-    [access.id, access.accountId, access.keyHash, randomUUID(), requestHash, messageHash, encryptedMessage]);
-    return rows[0] || await replay() || { error: 'target_unavailable' };
+      [access.id,access.accountId,access.keyHash,rootId,requestHash,messageHash,encryptedMessage]);
+    if (!rows.length) return await replay() || {error:'target_unavailable'};
+    const receipt=rows.find(row=>row.messageId===rootId);
+    return rows.length===1 ? receipt : {...receipt,deliveries:rows};
+
   }
 
   async function status(access, messageId) {
@@ -218,7 +261,7 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
       )
       select j.notification_id,j.attempts,j.encrypted_message,n.account_id,r.encrypted_line_id,b.encrypted_access_token,
         (n.created_at<now()-interval '15 minutes') as expired,
-        (i.enabled and i.revision=j.integration_revision and i.recipient_id=n.recipient_id
+        (i.enabled and i.revision=j.integration_revision and n.recipient_id=any(${assigned})
           and a.status='active' and r.active and b.enabled
           and r.created_at<=n.created_at and b.updated_at<=n.created_at) as permitted
       from claimed j
