@@ -16,6 +16,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  files.set('/pair-register',['pair-register.html','text/html; charset=utf-8']);
  files.set('/pair-register.js',['pair-register.js','text/javascript; charset=utf-8']);
  files.set('/connection-guide',['connection-guide.html','text/html; charset=utf-8']);
+ for (const page of ['about','privacy','terms']) files.set('/'+page,[page+'.html','text/html; charset=utf-8']);
  files.set('/line-setup-options.js',['line-setup-options.js','text/javascript; charset=utf-8']);
  files.set('/line-login-setup.md', ['line-login-setup.md', 'text/plain; charset=utf-8']);
  files.set('/line-bot-setup.md', ['line-bot-setup.md', 'text/plain; charset=utf-8']);
