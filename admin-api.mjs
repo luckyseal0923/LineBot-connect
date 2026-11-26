@@ -85,7 +85,7 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
   if(req.method==='POST' && req.headers.origin!==origin.origin){send(res,403,{error:'來源不正確'});return true;}
   try {
    const admin=await authorize(req);
-   if(!admin?.id || (admin.mfaVerified!==true && admin.passwordVerified!==true)){send(res,401,{error:'請先登入管理員帳號。'});return true;}
+   if(!admin?.id || (admin.mfaVerified!==true && admin.passwordVerified!==true && admin.googleVerified!==true)){send(res,401,{error:'請先登入管理員帳號。'});return true;}
    if (path==='/admin-api/support' || path==='/admin-api/support/image') {
      await supportRequest({db:reviewDb,req,res,send,url:new URL(req.url,origin)});
      return true;

@@ -11,7 +11,7 @@ test('password login records outcomes and locks after five failures without acce
  const db = new PGlite();
  try {
   await db.exec("create role anon;create role authenticated;create role linebot_runtime;create role linebot_reviewer;create role linebot_admin_auth;set linebot.isolated_test='yes';");
-  for (const name of ['005_independent_accounts.sql','006_runtime_grants.sql','007_review_retention.sql','008_admin_mfa.sql','010_admin_login_audit.sql']) await db.exec(await readFile(new URL('./db/'+name,import.meta.url),'utf8'));
+  for (const name of ['005_independent_accounts.sql','006_runtime_grants.sql','007_review_retention.sql','008_admin_mfa.sql','010_admin_login_audit.sql','029_admin_google_signin.sql']) await db.exec(await readFile(new URL('./db/'+name,import.meta.url),'utf8'));
   const id='00000000-0000-0000-0000-000000000001', salt=randomBytes(16).toString('hex'), password='test-password-long';
   const hash=scryptSync(password,Buffer.from(salt,'hex'),64,{N:16384,r:8,p:1,maxmem:64*1024*1024}).toString('hex');
   await db.query("insert into linebot_private.admin_auth(id,username,password_salt,password_hash,encrypted_totp,enabled) values($1,$2,$3,$4,'{}'::jsonb,true)",[id,'admin_test',salt,hash]);
@@ -36,7 +36,7 @@ test('administrator can sign in without OTP and access the review page', async (
  const db=new PGlite(); let server;
  try {
   await db.exec("create role anon;create role authenticated;create role linebot_runtime;create role linebot_reviewer;create role linebot_admin_auth;set linebot.isolated_test='yes';");
-  for(const name of ['005_independent_accounts.sql','006_runtime_grants.sql','007_review_retention.sql','008_admin_mfa.sql','010_admin_login_audit.sql']) await db.exec(await readFile(new URL('./db/'+name,import.meta.url),'utf8'));
+  for(const name of ['005_independent_accounts.sql','006_runtime_grants.sql','007_review_retention.sql','008_admin_mfa.sql','010_admin_login_audit.sql','029_admin_google_signin.sql']) await db.exec(await readFile(new URL('./db/'+name,import.meta.url),'utf8'));
   const salt=randomBytes(16).toString('hex'),password='test-password-long';
   const hash=scryptSync(password,Buffer.from(salt,'hex'),64,{N:16384,r:8,p:1,maxmem:64*1024*1024}).toString('hex');
   await db.query("insert into linebot_private.admin_auth(username,password_salt,password_hash,encrypted_totp,enabled) values($1,$2,$3,'{}'::jsonb,true)",['admin_test',salt,hash]);

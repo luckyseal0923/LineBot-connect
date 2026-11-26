@@ -10,6 +10,9 @@ services:
       LINEBOT_DB_CA_CERT_BASE64: ${LINEBOT_DB_CA_CERT_BASE64:?Set the database CA certificate}
       LINEBOT_ENCRYPTION_KEY: ${LINEBOT_ENCRYPTION_KEY:?Set the encryption key}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the HTTPS site origin}
+      ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set the HTTPS administrator origin}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     networks: [edge, linebot_private]
     mem_limit: 192m
     cpus: 0.5
@@ -27,6 +30,9 @@ services:
       LINEBOT_DB_CA_CERT_BASE64: ${LINEBOT_DB_CA_CERT_BASE64:?Set the database CA certificate}
       LINEBOT_REVIEW_DATABASE_URL: ${LINEBOT_REVIEW_DATABASE_URL:?Set the restricted review database URL}
       LINEBOT_ADMIN_ENCRYPTION_KEY: ${LINEBOT_ADMIN_ENCRYPTION_KEY:?Set the separate administrator encryption key}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the HTTPS site origin}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set the HTTPS administrator origin}
     networks: [edge, linebot_private]
     mem_limit: 192m

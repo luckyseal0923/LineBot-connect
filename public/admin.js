@@ -149,13 +149,21 @@ function renderLogin() {
   view.innerHTML = `<section class="panel entry-card admin-entry">
     <h1 tabindex="-1">管理員登入</h1>
     <p class="muted">審核開發者帳號，查閱接線站用量和紀錄。</p>
+    <a class="button button-primary button-full" href="/auth/google/start">使用 Google 登入管理後台</a>
+    <p id="google-login-message" class="feedback" role="status"></p>
+    <details class="help-block"><summary>使用原管理員帳號登入</summary>
     <form id="login-form" class="form-stack">
       <label>管理員帳號<input name="username" autocomplete="username" autocapitalize="none" required></label>
       <label>密碼<input name="password" type="password" autocomplete="current-password" required></label>
       <button class="button button-primary button-full" type="submit">登入</button>
       <p id="login-message" class="feedback" role="status"></p>
-    </form>
+    </form></details>
   </section>`;
+  const error = route().params.get('google');
+  if(error) {
+    const messages={disabled:'這個 Google 帳號沒有管理員權限。',cancelled:'已取消 Google 登入。',busy:'登入次數過多，請稍後再試。',expired:'登入已逾時，請重新登入。'};
+    report(view.querySelector('#google-login-message'),Object.hasOwn(messages,error)?messages[error]:'Google 登入暫時無法完成，請稍後再試。','danger');
+  }
   const form = view.querySelector('#login-form');
   const feedback = view.querySelector('#login-message');
   form.addEventListener('submit', async event => {

@@ -1,4 +1,6 @@
 import pg from 'pg';
+import { createGoogleOAuth } from './google-oauth.mjs';
+import { adminSessionCookie } from './admin-session-api.mjs';
 import { checkDatabaseRole } from './db-role-preflight.mjs';
 import { createCredentialVault } from './line-webhook.mjs';
 import { createAdminPassword } from './admin-password.mjs';
@@ -18,7 +20,14 @@ if(authRole.name===reviewRole.name)throw Error('Administrator roles must be sepa
 if(!(await checkDatabaseRole(authDb,'linebot_admin_auth')).safe || !(await checkDatabaseRole(reviewDb,'linebot_reviewer')).safe)throw Error('Administrator database roles failed isolation checks');
 const vault=createCredentialVault(Buffer.from(LINEBOT_ADMIN_ENCRYPTION_KEY,'base64'),{context:'admin-totp'});
 const mfa=createAdminPassword({db:authDb});
-const server=createAdminServer({authDb,reviewDb,vault,mfa,allow:createAdminRateLimiter({db:authDb}),publicOrigin:ADMIN_PUBLIC_ORIGIN});
+const allow=createAdminRateLimiter({db:authDb});
+const googleSignIn=process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? createGoogleOAuth({
+  admin:true, login:mfa.loginWithGoogle, sessionCookie:adminSessionCookie, successPath:'/#overview', errorPath:'/#overview?google=',
+  key:Buffer.from(LINEBOT_ADMIN_ENCRYPTION_KEY,'base64'), allow, publicOrigin:ADMIN_PUBLIC_ORIGIN,
+  redirectOrigin:process.env.PUBLIC_ORIGIN || 'https://linebot-next.wfhai.org',
+  clientId:process.env.GOOGLE_CLIENT_ID, clientSecret:process.env.GOOGLE_CLIENT_SECRET
+}) : null;
+const server=createAdminServer({authDb,reviewDb,vault,mfa,allow,publicOrigin:ADMIN_PUBLIC_ORIGIN,googleSignIn});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('Admin service ready'));
 const cleanup=setInterval(()=>authDb.query('select linebot_private.purge_admin_login_audit()').catch(()=>console.error('Admin login audit cleanup failed')),60*60*1000);
 cleanup.unref();

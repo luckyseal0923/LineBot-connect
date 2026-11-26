@@ -6,7 +6,7 @@ import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
 import { createExternalApi } from './external-api.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleSignIn,supportDb}) {
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleSignIn,supportDb,adminOrigin}) {
  const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,supportDb,googleLogin:Boolean(googleSignIn)});
  const externalApi=createExternalApi({integrations,allow});
  const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
@@ -24,6 +24,21 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  const headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
  return createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
+  // Both services use the registered Google callback. The admin host alone can
+  // read the admin flow cookie, redeem its PKCE code and issue its session.
+  if (adminOrigin && req.method==='GET' && path==='/auth/google/callback') {
+    const query=new URL(req.url,publicOrigin).searchParams;
+    const state=query.get('state');
+    if (/^admin_[A-Za-z0-9_-]{43}$/.test(state || '')) {
+      const to=new URL('/auth/google/callback',adminOrigin);
+      to.searchParams.set('state',state);
+      for (const field of ['code','error']) {
+        const value=query.get(field);
+        if(value && value.length<=4096) to.searchParams.set(field,value);
+      }
+      res.writeHead(303,{...headers,Location:to.href});return res.end();
+    }
+  }
   if (googleSignIn && (path==='/auth/google/start' || path==='/auth/google/callback')) return googleSignIn(req,res,path);
   if (path==='/pair-registration' && notifications?.registration) {
     try { return await notifications.registration.handle(req,res); }

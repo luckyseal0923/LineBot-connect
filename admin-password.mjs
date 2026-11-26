@@ -19,7 +19,7 @@ export function createAdminPassword({ db, clock = () => new Date() }) {
    const hash = await derive(password, row?.password_salt || '00000000000000000000000000000000');
    const saved = row ? Buffer.from(row.password_hash, 'hex') : Buffer.alloc(64);
    const match = saved.length === hash.length && timingSafeEqual(hash, saved), now = clock();
-   if (!row || !row.enabled || (row.locked_until && new Date(row.locked_until) > now)) {
+   if (!row || row.google_email || !row.enabled || (row.locked_until && new Date(row.locked_until) > now)) {
     await db.query('insert into linebot_private.admin_login_audit(admin_id,outcome) values ($1,$2)', [row?.id || null, 'denied']);
     return null;
    }
@@ -37,11 +37,29 @@ export function createAdminPassword({ db, clock = () => new Date() }) {
    await db.query('insert into linebot_private.admin_sessions(token_hash,admin_id,expires_at) values ($1,$2,$3)', [digest(token),row.id,new Date(now.getTime()+15*60*1000)]);
    return token;
   },
+  async loginWithGoogle({email,subject,hostedDomain}) {
+   // The caller has verified Google's signature, audience, email and nonce.
+   // For non-Gmail addresses require a Google Workspace-managed identity.
+   if (!email.endsWith('@gmail.com') && !hostedDomain) return {status:'denied'};
+   const token=randomBytes(32).toString('base64url');
+   const expiry=new Date(clock().getTime()+15*60*1000);
+   const {rows}=await db.query(`with allowed as (
+     update linebot_private.admin_auth set google_subject=$2
+     where enabled and google_email=$1 and (google_subject is null or google_subject=$2)
+     returning id
+   ), audit as (
+     insert into linebot_private.admin_login_audit(admin_id,outcome)
+     select (select id from allowed),case when exists(select 1 from allowed) then 'success' else 'denied' end
+   ) insert into linebot_private.admin_sessions(token_hash,admin_id,expires_at)
+     select $3,id,$4 from allowed returning admin_id`,[email,subject,digest(token),expiry]);
+   return rows.length ? {status:'ok',token} : {status:'denied'};
+  },
   async session(token) {
    if (typeof token !== 'string' || !tokenPattern.test(token)) return null;
-   const result = await db.query(`select a.id from linebot_private.admin_sessions s join linebot_private.admin_auth a on a.id=s.admin_id
+   const result = await db.query(`select a.id,a.google_email is not null as google from linebot_private.admin_sessions s join linebot_private.admin_auth a on a.id=s.admin_id
     where s.token_hash=$1 and s.expires_at>$2 and a.enabled=true`, [digest(token),clock()]);
-   return result.rows[0] ? {id:result.rows[0].id,passwordVerified:true} : null;
+   const admin=result.rows[0];
+   return !admin ? null : admin.google ? {id:admin.id,googleVerified:true} : {id:admin.id,passwordVerified:true};
   },
   async logout(token) { if (typeof token === 'string' && tokenPattern.test(token)) await db.query('delete from linebot_private.admin_sessions where token_hash=$1',[digest(token)]); }
  };
