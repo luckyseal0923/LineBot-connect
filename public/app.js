@@ -842,6 +842,38 @@ function confirmAction(title, description, label, signal, style = 'danger') {
   });
 }
 
+function confirmBotDeletion(bot, signal) {
+  if (signal.aborted) return Promise.resolve(false);
+  const dialog = document.createElement('dialog');
+  dialog.className = 'action-dialog';
+  dialog.setAttribute('aria-labelledby', 'delete-bot-title');
+  dialog.innerHTML = `<h2 id="delete-bot-title">刪除 LINE Bot</h2>
+    <p>即將從此網站刪除「${escapeHtml(bot.name)}」的 LINE Bot 連線與憑證。這不會刪除 LINE 官方帳號。</p>
+    <ul><li>舊的收件者配對會失效，重新設定後需再次配對。</li>
+      <li>通知事件名稱與發送紀錄保留；事件會停用並清除原收件者，需重新指定並啟用。</li>
+      <li>等待發送的通知將無法繼續發送；已在處理中的通知可能仍會送出。</li></ul>
+    <p>此操作無法直接復原。請輸入「<strong>刪除 LINE Bot</strong>」才能繼續。</p>
+    <form class="form-stack"><label>確認文字<input name="confirmation" autocomplete="off" required autofocus></label>
+      <p class="feedback" role="status"></p><div class="dialog-actions">
+        <button class="button button-secondary" type="button" data-cancel>取消</button>
+        <button class="button button-danger" type="submit" disabled>確認刪除</button></div></form>`;
+  view.append(dialog);
+  const form = dialog.querySelector('form'), input = form.elements.confirmation, submit = form.querySelector('[type="submit"]');
+  input.addEventListener('input', () => { submit.disabled = input.value !== '刪除 LINE Bot'; });
+  form.addEventListener('submit', event => { event.preventDefault(); if (input.value === '刪除 LINE Bot') dialog.close('confirm'); });
+  dialog.querySelector('[data-cancel]').addEventListener('click', () => dialog.close('cancel'));
+  return new Promise(resolve => {
+    const cancel = () => dialog.close('cancel');
+    signal.addEventListener('abort', cancel, { once: true });
+    dialog.addEventListener('close', () => {
+      signal.removeEventListener('abort', cancel);
+      const confirmed = dialog.returnValue === 'confirm' && !signal.aborted;
+      dialog.remove(); resolve(confirmed);
+    }, { once: true });
+    dialog.showModal();
+  });
+}
+
 const webhookLabels = {
   verified: ['LINE 驗證通過', 'success', '已確認 LINE 可以連到這個 Bot 的 Webhook。'],
   verified_inactive: ['LINE 測試通過，尚未啟用', 'warning', '請回 LINE Developers 開啟 Use webhook。'],
@@ -853,7 +885,7 @@ const webhookLabels = {
 
 function showWebhookState(target, bot) {
   if (!bot.enabled) {
-    target.innerHTML = `${chip('LINE 驗證暫停')}<p class="muted small">重新啟用 Bot 後即可檢查。</p>`;
+    target.innerHTML = `${chip('LINE 驗證暫停')}<p class="muted small">此 Bot 已停用。若要重新設定，請先刪除連線。</p>`;
     return;
   }
   const check = webhookChecks.get(bot.id);
@@ -1151,27 +1183,27 @@ async function renderBots(params, signal) {
     </section>
     <section class="panel" aria-labelledby="bot-actions-title">
       <h2 id="bot-actions-title">Bot 管理</h2>
-      <p class="muted">管理此平台的 LINE 憑證及啟用狀態。</p>
+      <p class="muted">管理此平台的 LINE 憑證或刪除 Bot 連線。</p>
       <div class="button-row spaced">
-        ${buttonLink(bot.enabled ? '更新憑證' : '重新啟用 Bot', '#bot?setup=1', 'secondary')}
-        ${bot.enabled ? '<button class="button button-danger-outline" type="button" data-disable-bot>停用 Bot</button>' : ''}
+        ${bot.enabled ? buttonLink('更新憑證', '#bot?setup=1', 'secondary') : ''}
+        <button class="button button-danger-outline" type="button" data-delete-bot>刪除 LINE Bot</button>
       </div>
       <p class="feedback" data-bot-feedback role="status"></p>
     </section>
   </div>`;
 
   bindWebhookControls(list.querySelector('.bot-card'), bot, signal);
-  const button = list.querySelector('[data-disable-bot]');
+  const button = list.querySelector('[data-delete-bot]');
   button?.addEventListener('click', async () => {
     if (button.disabled) return;
     button.disabled = true;
     const feedback = list.querySelector('[data-bot-feedback]');
     try {
-      if (!await confirmAction('停用 LINE Bot', `停用「${bot.name}」後，這個平台將暫停配對與發送。`, '確認停用', signal)) return;
-      await api('bot/disable', { data: { botId: bot.id }, signal });
+      if (!await confirmBotDeletion(bot, signal)) return;
+      await api('bot/delete', { data: { botId: bot.id, confirmation: '刪除 LINE Bot' }, signal });
       if (signal.aborted) return;
       webhookChecks.delete(bot.id);
-      await renderBots(new URLSearchParams(), signal);
+      await render();
     } catch (error) {
       if (!signal.aborted) report(feedback, error.message, 'danger');
     } finally {

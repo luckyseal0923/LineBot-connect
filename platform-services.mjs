@@ -58,6 +58,11 @@ export function createPlatformServices({db}) {
       const { rows: [result] } = await db.query('select linebot_private.delete_platform($1,$2) as id', [accountId,id]);
       return result?.id ? result : { error: 'unavailable' };
     },
+    async removeBot(accountId, platformId, botId) {
+      if (!uuid.test(platformId || '') || !uuid.test(botId || '')) return { error: 'invalid' };
+      const { rows } = await db.query('select linebot_private.delete_platform_bot($1,$2,$3) as deleted', [accountId,platformId,botId]);
+      return rows[0]?.deleted ? { ok: true } : { error: 'unavailable' };
+    },
     async getLineSetup(accountId, id) {
       if (!uuid.test(id || '')) return { error: 'invalid' };
       const { rows } = await db.query(

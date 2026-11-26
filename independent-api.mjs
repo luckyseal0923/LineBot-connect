@@ -163,6 +163,17 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         send(res, 200, { status, checkedAt: new Date().toISOString() });
         return true;
       }
+      if(path==='/independent-api/bot/delete' && req.method==='POST') {
+        const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}
+        if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
+        if(!await allow('platform-manage') || !await allow(`platform-manage:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
+        const data=await read(req);
+        if(!platforms || !botIdPattern.test(requestedPlatform || '') || !botIdPattern.test(data?.botId || '') || data.confirmation!=='刪除 LINE Bot') {
+          send(res,400,{error:'請確認平台、Bot 與確認文字。'});return true;
+        }
+        const result=await platforms.removeBot(user.id,requestedPlatform,data.botId);
+        send(res,result.ok?200:404,result.ok?{message:'已刪除 LINE Bot，請重新設定。'}:{error:'找不到此平台的 LINE Bot，請重新整理。'});return true;
+      }
       if(path==='/independent-api/bot/disable' && req.method==='POST') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         const data=await read(req);
