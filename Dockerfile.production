@@ -5,7 +5,6 @@ COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node pairing-registration.mjs recipient-details.mjs recipient-join.mjs production-server.mjs app-server.mjs accounts.mjs independent-api.mjs bot-store.mjs line-client.mjs line-webhook.mjs event-store.mjs request-limiter.mjs db-role-preflight.mjs db-tls-config.mjs notifications.mjs line-quota.mjs external-integrations.mjs external-api.mjs platform-services.mjs google-signin.mjs support.mjs support-mail.mjs ./
 COPY --chown=node:node public ./public
-COPY --chown=node:node db/028_support_messages.sql ./db/
 USER node
 EXPOSE 3000
 CMD ["node", "production-server.mjs"]
