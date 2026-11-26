@@ -182,6 +182,20 @@ html[data-auth="active"] .workspace-shell:has(> .sidebar[hidden]) > .workspace-c
 .platform-context .button { min-height: 2.25rem; flex-shrink: 0; }
 .workspace-content main :focus { scroll-margin-top: 5rem; }
 .site-footer { padding: .75rem 1rem 1.4rem; text-align: center; font-size: .8rem; color: var(--muted); }
+.developer-credit { margin: 0 0 .5rem; font-size: .9rem; }
+.developer-credit strong { color: var(--deep); font-weight: 700; }
+.developer-credit + .public-footer-links a + a { position: relative; }
+.developer-credit + .public-footer-links a + a::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -.625rem;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translate(-50%, -50%);
+}
 .support-message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .support-image { max-width: min(100%, 30rem); max-height: 22rem; object-fit: contain; }
 .public-footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; }
