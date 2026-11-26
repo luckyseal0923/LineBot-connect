@@ -294,11 +294,20 @@ function renderEntry(page) {
   const heading = signingUp ? '申請接線站帳號' : '登入接線站';
   view.innerHTML = `<div class="entry-layout">
     <div class="entry-intro">
-      <h2>讓數位平台的事件<br>變成 LINE 通知</h2>
+      ${signingUp ? `<div class="entry-line-icon" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M24 6C12.95 6 4 13.8 4 23.4c0 8.6 7.1 15.8 16.7 17.2.7.1 1.1.6 1 1.3l-.4 2.8c0 .5.5.8.9.5C32.9 39.9 44 32.3 44 23.4 44 13.8 35.05 6 24 6Z" fill="white"/><text x="24" y="27" text-anchor="middle" fill="#06c755" font-family="Arial,sans-serif" font-size="12" font-weight="bold">LINE</text></svg></div>
+      <h2>讓你的網站，<br>透過 LINE 發送通知</h2>
+      <p>將網站連接到接線站，當報名、申請等事件發生時，就能通知相關人員。</p>
+      <div class="entry-flow" aria-label="你的網站透過 LINE 接線站通知收件者的 LINE">
+        <span>你的網站</span><span aria-hidden="true">→</span><span>LINE 接線站</span><span aria-hidden="true">→</span><span>收件者的 LINE</span>
+      </div>
+      <details class="entry-bot-help">
+        <summary>什麼是 LINE Bot？</summary>
+        <p>LINE Bot 讓你的 LINE 官方帳號能自動收發訊息。設定完成後，你的網站就能透過它發送通知。</p>
+      </details>` : `<h2>讓數位平台的事件<br>變成 LINE 通知</h2>
       <p>每個平台綁定自己的 LINE Bot，分開管理事件、收件者與發送紀錄。</p>
       <div class="entry-flow" aria-label="數位平台透過事件串接通知 LINE 收件者">
         <span>數位平台</span><span aria-hidden="true">→</span><span>事件串接</span><span aria-hidden="true">→</span><span>LINE 收件者</span>
-      </div>
+      </div>`}
     </div>
     <section class="panel entry-card" aria-labelledby="entry-title">
       <h1 id="entry-title" tabindex="-1">${heading}</h1>
