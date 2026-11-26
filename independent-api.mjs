@@ -1,3 +1,4 @@
+import { supportRequest } from './support.mjs';
 
 import { eventWebhookPath } from './external-api.mjs';
 
@@ -9,7 +10,7 @@ export function developerSessionCookie(origin, token = '') {
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, recipientJoin, googleLogin = false }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, recipientJoin, supportDb, googleLogin = false }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
@@ -73,6 +74,12 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       const gatedUser = await accounts.me(getToken(req));
       if (gatedUser && !gatedUser.profile_complete) {
         send(res,403,{error:'請先完成開發者資料。'}); return true;
+      }
+      if (path==='/independent-api/support' || path==='/independent-api/support/image') {
+        if (!gatedUser || gatedUser.status!=='active') {send(res,gatedUser?403:401,{error:'請以已啟用的開發者帳號登入。'});return true;}
+        if (!supportDb) {send(res,503,{error:'此環境尚未啟用技術支援。'});return true;}
+        await supportRequest({db:supportDb,req,res,send,url:requestUrl,user:gatedUser,allow});
+        return true;
       }
       if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path===lineSetupPath || path===platformDeletePath) {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}

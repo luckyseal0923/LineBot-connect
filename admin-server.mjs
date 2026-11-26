@@ -5,7 +5,7 @@ import { createAdminSessionApi } from './admin-session-api.mjs';
 export function createAdminServer({authDb,reviewDb,vault,mfa,allow,publicOrigin}){
  const session=createAdminSessionApi({mfa,allow,publicOrigin});
  const api=createAdminApi({reviewDb,authorize:session.authorize,publicOrigin});
- const paths=new Map([['/',['admin.html','text/html']],['/admin.js',['admin.js','text/javascript']],['/styles.css',['styles.css','text/css']]]);
+ const paths=new Map([['/',['admin.html','text/html']],['/support.js',['support.js','text/javascript']],['/admin.js',['admin.js','text/javascript']],['/styles.css',['styles.css','text/css']]]);
  const headers={'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
  return createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;

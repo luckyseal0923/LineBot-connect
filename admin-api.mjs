@@ -1,3 +1,4 @@
+import { supportRequest } from './support.mjs';
 const lists = {
   accounts: { view: 'admin_accounts', order: 'created_at desc, username' },
   bots: { view: 'admin_bots', order: 'updated_at desc, username, bot_name' },
@@ -85,6 +86,10 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
   try {
    const admin=await authorize(req);
    if(!admin?.id || (admin.mfaVerified!==true && admin.passwordVerified!==true)){send(res,401,{error:'請先登入管理員帳號。'});return true;}
+   if (path==='/admin-api/support' || path==='/admin-api/support/image') {
+     await supportRequest({db:reviewDb,req,res,send,url:new URL(req.url,origin)});
+     return true;
+   }
    if(path==='/admin-api/pending' && req.method==='GET'){
     const pending = " from linebot_private.accounts where status='pending' order by created_at limit 100";
     const columns = 'select username,display_name,status,created_at';

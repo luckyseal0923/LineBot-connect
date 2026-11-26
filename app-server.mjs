@@ -6,8 +6,8 @@ import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
 import { createExternalApi } from './external-api.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleSignIn}) {
- const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleLogin:Boolean(googleSignIn)});
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleSignIn,supportDb}) {
+ const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,supportDb,googleLogin:Boolean(googleSignIn)});
  const externalApi=createExternalApi({integrations,allow});
  const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
  const root=fileURLToPath(new URL('./public/',import.meta.url));
@@ -17,6 +17,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  files.set('/pair-register.js',['pair-register.js','text/javascript; charset=utf-8']);
  files.set('/connection-guide',['connection-guide.html','text/html; charset=utf-8']);
  for (const page of ['about','privacy','terms']) files.set('/'+page,[page+'.html','text/html; charset=utf-8']);
+ files.set('/support.js',['support.js','text/javascript; charset=utf-8']);
  files.set('/line-setup-options.js',['line-setup-options.js','text/javascript; charset=utf-8']);
  files.set('/line-login-setup.md', ['line-login-setup.md', 'text/plain; charset=utf-8']);
  files.set('/line-bot-setup.md', ['line-bot-setup.md', 'text/plain; charset=utf-8']);

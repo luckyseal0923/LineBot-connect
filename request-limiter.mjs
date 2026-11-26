@@ -9,7 +9,7 @@ export function createRequestLimiter({ db }) {
     };
     const scopedLimits = {
       'pair-user': [5,600], 'pair-bot': [100,600], 'recipient-join': [120,60], pairing: [5,60], notify: [10,60], 'webhook-check': [12,3600],
-      'developer-profile': [10,60], 'external-account': [10,60], 'external-integration': [5,60], 'integration-manage': [12,60], 'platform-manage': [12,60]
+      support: [8,600], 'developer-profile': [10,60], 'external-account': [10,60], 'external-integration': [5,60], 'integration-manage': [12,60], 'platform-manage': [12,60]
     };
     const scoped = /^([a-z-]+):[0-9a-f-]{36}$/.exec(scope) || /^(pair-user):[0-9a-f]{64}$/.exec(scope);
     const limit = scoped ? scopedLimits[scoped[1]] : limits[scope];

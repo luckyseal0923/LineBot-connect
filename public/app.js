@@ -1,3 +1,4 @@
+import { renderSupport } from './support.js';
 const view = document.querySelector('#view');
 const navigation = document.querySelector('#workspace-nav');
 const platformNav = document.querySelector('#platform-nav');
@@ -9,7 +10,7 @@ const accountLink = document.querySelector('#account-link');
 const guestLink = document.querySelector('#guest-link');
 const logoutButton = document.querySelector('#logout-button');
 const consoleUrl = 'https://developers.line.biz/console/';
-const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages']);
+const workspacePages = new Set(['overview', 'bot', 'recipients', 'integrations', 'messages', 'support']);
 const pages = new Set(['platforms', 'account', 'register', ...workspacePages]);
 const webhookChecks = new Map();
 const stamp = new Intl.DateTimeFormat('zh-TW', {
@@ -266,6 +267,7 @@ async function render({ openPlatformsIfApproved = false } = {}) {
     if (page === 'platforms') await renderPlatforms(signal);
     if (page === 'bot') await renderBots(params, signal);
     if (page === 'recipients') await renderRecipients(signal);
+    if (page === 'support') await renderSupport({view, signal, platform:currentPlatform, request:api});
     if (page === 'messages') await renderMessages(signal);
     if (page === 'integrations') await renderIntegrations(signal);
   }

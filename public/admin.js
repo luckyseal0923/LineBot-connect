@@ -1,7 +1,8 @@
+import { renderSupport } from './support.js';
 const view = document.querySelector('#admin-view');
 const nav = document.querySelector('#admin-nav');
 const logout = document.querySelector('#admin-logout');
-const sections = new Set(['overview', 'pending', 'users', 'usage', 'records', 'audit']);
+const sections = new Set(['overview', 'pending', 'users', 'usage', 'records', 'audit', 'support']);
 const stamp = new Intl.DateTimeFormat('zh-TW', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Taipei'
 });
@@ -110,6 +111,7 @@ async function render() {
     if (signal.aborted) return;
     setLayout(true, section);
     if (section === 'overview') await renderOverview(pending.accounts, signal);
+    if (section === 'support') await renderSupport({view, signal, request:adminApi});
     if (section === 'pending') renderPending(pending.accounts, signal);
     if (section === 'users') {
       if (params.get('username')) await renderAccount(params, signal);

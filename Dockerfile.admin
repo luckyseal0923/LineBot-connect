@@ -3,8 +3,8 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY --chown=node:node admin-production.mjs admin-server.mjs admin-api.mjs admin-session-api.mjs admin-mfa.mjs admin-password.mjs admin-rate-limit.mjs admin-enrollment.mjs admin-enrollment-db.mjs admin-enroll-cli.mjs line-webhook.mjs db-role-preflight.mjs db-tls-config.mjs ./
-COPY --chown=node:node public/admin.html public/admin.js public/styles.css ./public/
+COPY --chown=node:node admin-production.mjs admin-server.mjs admin-api.mjs admin-session-api.mjs admin-mfa.mjs admin-password.mjs admin-rate-limit.mjs admin-enrollment.mjs admin-enrollment-db.mjs admin-enroll-cli.mjs line-webhook.mjs db-role-preflight.mjs db-tls-config.mjs support.mjs ./
+COPY --chown=node:node public/admin.html public/admin.js public/support.js public/styles.css ./public/
 USER node
 EXPOSE 3000
 CMD ["node", "admin-production.mjs"]
