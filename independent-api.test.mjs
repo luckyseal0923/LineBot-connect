@@ -14,6 +14,7 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
  try {
   await db.exec("create role anon; create role authenticated; set linebot.isolated_test='yes';");
   await db.exec(await readFile(new URL('./db/005_independent_accounts.sql',import.meta.url),'utf8'));
+  await db.exec('create table linebot_private.developer_profiles(account_id uuid primary key);');
   await db.exec(await readFile(new URL('./db/011_multiple_bots.sql',import.meta.url),'utf8'));
   const accounts=createAccounts({db}),vault=createCredentialVault(randomBytes(32)),bots=createBotStore({db,vault,tokenVault:createCredentialVault(Buffer.alloc(32,1),{context:'channel-access-token'})});
   const api=createIndependentApi({accounts,bots,allow:async()=>true,lookupBot:async token=>({userId:'U'+(token==='token-b'?'b':'a').repeat(32),displayName:'test bot'}),publicOrigin:'http://127.0.0.1:39179'});
@@ -29,6 +30,7 @@ test('independent HTTP signup, login, owner-only webhook and bot setup', async (
   assert.equal((await (await fetch(origin+'/independent-api/me',{headers:{Cookie:pendingCookie}})).json()).status,'pending');
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},pendingCookie)).status,403);
   await db.exec("update linebot_private.accounts set status='active'");
+  await db.exec('insert into linebot_private.developer_profiles(account_id) select id from linebot_private.accounts');
   const login=await post('/independent-api/login',{username:'user_a',password:'a secure password'});
   assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
   assert.match(login.headers.get('set-cookie'),/HttpOnly; SameSite=Strict/);

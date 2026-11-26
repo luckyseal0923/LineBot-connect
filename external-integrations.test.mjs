@@ -52,7 +52,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
       const botId = randomUUID();
       const recipientId = randomUUID();
       const lineId = 'U' + letter.repeat(32);
-      users.set(letter.repeat(43), { id: accountId, status: 'active', botId, recipientId, lineId });
+      users.set(letter.repeat(43), { id: accountId, status: 'active', profile_complete:true, botId, recipientId, lineId });
       await db.query(`insert into linebot_private.accounts(id,username,display_name,password_salt,password_hash,status)
         values($1,$2,$2,'test salt','test hash','active')`, [accountId, name]);
       await db.query(`insert into linebot_private.bot_credentials
@@ -71,7 +71,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     const secondBot = randomUUID(), secondRecipient = randomUUID();
     await db.query(`insert into linebot_private.bot_credentials(id,account_id,bot_user_id,bot_name,encrypted_secret,encrypted_access_token,enabled) values($1,$2,$3,'second','{}',$4,true)`,[secondBot,alice.id,'U'+'c'.repeat(32),JSON.stringify(tokenVault.seal(alice.id,'token'))]);
     await db.query(`insert into linebot_private.recipients(id,account_id,bot_id,line_hash,encrypted_line_id,label) values($1,$2,$3,'second',$4,'second')`,[secondRecipient,alice.id,secondBot,JSON.stringify(recipientVault.seal(alice.id,'U'+'c'.repeat(32)))]);
-    users.set('p'.repeat(43), { id: randomUUID(), status: 'pending' });
+    users.set('p'.repeat(43), { id: randomUUID(), status: 'pending', profile_complete:true });
 
     const sent = [];
     const lineReplies = [

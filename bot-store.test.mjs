@@ -12,6 +12,7 @@ test('account-owned bot secret routes webhook to the correct account', async () 
  try {
   await db.exec("create role anon; create role authenticated; set linebot.isolated_test='yes';");
   await db.exec(await readFile(new URL('./db/005_independent_accounts.sql',import.meta.url),'utf8'));
+  await db.exec('create table linebot_private.developer_profiles(account_id uuid primary key);');
   await db.exec(await readFile(new URL('./db/011_multiple_bots.sql',import.meta.url),'utf8'));
   const accounts=createAccounts({db});
   for(const username of ['user_a','user_b']) await accounts.register({username,displayName:username,password:'a secure password'});

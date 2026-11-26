@@ -123,7 +123,7 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
     let data;try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(res,400,{error:'資料格式不正確'});return true;}
     if(typeof data.username!=='string'||!/^[a-z0-9_]{3,32}$/.test(data.username)||!['active','disabled'].includes(data.status)||typeof data.reason!=='string'||!data.reason.trim()||data.reason.trim().length>500){send(res,400,{error:'請確認帳號、決定和原因。'});return true;}
     const result=await reviewDb.query('select linebot_private.review_account($1,$2,$3) as changed',[data.username,data.status,data.reason.trim()]);
-    send(res,result.rows[0]?.changed?200:409,{message:result.rows[0]?.changed?'已記錄審核決定。':'沒有變更，請重新整理。'});return true;
+    send(res,result.rows[0]?.changed?200:409,{message:result.rows[0]?.changed?'已記錄審核決定。':'沒有變更。請確認申請人已填寫資料，並重新整理帳號狀態。'});return true;
    }
    send(res,404,{error:'找不到功能'});return true;
   }catch{send(res,503,{error:'管理服務暫時無法使用。'});return true;}

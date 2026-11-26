@@ -17,7 +17,7 @@ const migrations = [
   '005_independent_accounts', '006_runtime_grants', '007_review_retention', '011_multiple_bots',
   '012_notifications', '013_admin_monitoring', '014_line_quota', '015_external_integrations', '017_platform_services', '018_line_setup_details',
   '019_recipient_details', '020_delete_integration', '021_event_recipients', '022_webhook_number', '023_short_pairing',
-  '024_delete_platform', '025_google_signin'
+  '024_delete_platform', '025_google_signin', '026_developer_profiles'
 ];
 
 function listen(server, port) {
@@ -68,6 +68,7 @@ export async function startPilot({ port = 39261, sourcePort = 39262 } = {}) {
       const { rows } = await db.query(
         "update linebot_private.accounts set status='active' where username=$1 returning id", [username]
       );
+      await accounts.saveProfile(rows[0].id,{fullName:displayName,phone:'測試電話',hospital:'測試醫院',jobTitle:'測試職稱',department:'測試單位'});
       return { id: rows[0].id, username, password };
     }
 

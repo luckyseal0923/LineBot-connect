@@ -61,9 +61,17 @@ export function createAccounts({ db, clock = () => new Date() }) {
     },
     async me(token) {
       if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-      const result = await db.query(`select a.id,a.username,a.display_name,a.webhook_key,a.status from linebot_private.sessions s
-        join linebot_private.accounts a on a.id=s.account_id where s.token_hash=$1 and s.expires_at>$2 and a.status in ('pending','active')`, [tokenDigest(token), clock()]);
+      const result = await db.query(`select a.id,a.username,a.display_name,a.webhook_key,a.status, (p.account_id is not null) as profile_complete from linebot_private.sessions s
+        join linebot_private.accounts a on a.id=s.account_id left join linebot_private.developer_profiles p on p.account_id=a.id where s.token_hash=$1 and s.expires_at>$2 and a.status in ('pending','active')`, [tokenDigest(token), clock()]);
       return result.rows[0] || null;
+    },
+    async saveProfile(accountId, data) {
+      const fields = ['fullName','phone','hospital','jobTitle','department'];
+      const limits = [100,50,150,100,150];
+      if (!data || fields.some((field,i) => typeof data[field] !== 'string' || !data[field].trim() || data[field].trim().length > limits[i] || /[\x00-\x1f\x7f]/.test(data[field]))) return false;
+      const values = fields.map(field => data[field].trim());
+      await db.query('select linebot_private.save_developer_profile($1,$2,$3,$4,$5,$6)', [accountId,...values]);
+      return true;
     },
     async logout(token) {
       if (typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token)) await db.query('delete from linebot_private.sessions where token_hash=$1', [tokenDigest(token)]);

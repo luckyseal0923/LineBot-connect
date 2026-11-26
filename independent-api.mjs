@@ -61,7 +61,18 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
       }
       if(path==='/independent-api/me' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
-        send(res,200,{username:user.username,displayName:user.display_name,status:user.status});return true;
+        send(res,200,{username:user.username,displayName:user.display_name,status:user.status,profileComplete:user.profile_complete});return true;
+      }
+      if (path === '/independent-api/developer-profile' && req.method === 'POST') {
+        const user = await accounts.me(getToken(req));
+        if (!user) { send(res,401,{error:'請先登入。'}); return true; }
+        if (!await allow(`developer-profile:${user.id}`)) { send(res,429,{error:'操作過於頻繁，請稍後再試。'}); return true; }
+        const saved = await accounts.saveProfile(user.id,await read(req));
+        send(res,saved?200:400,saved?{message:'資料已儲存。'}:{error:'請確認五項資料均已填寫，且沒有超過字數限制。'}); return true;
+      }
+      const gatedUser = await accounts.me(getToken(req));
+      if (gatedUser && !gatedUser.profile_complete) {
+        send(res,403,{error:'請先完成開發者資料。'}); return true;
       }
       if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path===lineSetupPath || path===platformDeletePath) {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}

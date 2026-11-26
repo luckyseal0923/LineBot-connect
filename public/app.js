@@ -223,6 +223,10 @@ async function render({ openPlatformsIfApproved = false } = {}) {
     } catch (error) {
       if (!signal.aborted) showPageError(view, '暫時無法取得登入設定，請稍後再試。');
     }
+  } else if (!user.profileComplete) {
+    if (page !== 'account') page = replacePage('account');
+    setLayout('pending', page, user);
+    renderDeveloperProfile(signal);
   } else if (user.status !== 'active') {
     if (page !== 'account') page = replacePage('account');
     setLayout('pending', page, user);
@@ -283,7 +287,7 @@ function renderGoogleEntry(notice) {
     <div class="entry-intro">${entryIntro()}</div>
     <section class="panel entry-card" aria-labelledby="entry-title">
       <h1 id="entry-title" tabindex="-1">登入接線站</h1>
-      <p class="muted">經 Google 驗證的萬芳醫院 @w.tmu.edu.tw 帳號可直接啟用。其他帳號由管理員核准。</p>
+      <p class="muted">登入後請先填寫開發者資料。經 Google 驗證的萬芳醫院 @w.tmu.edu.tw 帳號完成資料後可啟用，其他帳號由管理員核准。</p>
       <a class="button button-primary button-full spaced" href="/auth/google/start">使用 Google 登入</a>
       ${Object.hasOwn(messages, notice) ? `<p class="feedback spaced" role="status">${messages[notice]}</p>` : ''}
     </section>
@@ -380,6 +384,32 @@ function renderEntry(page) {
     } finally {
       button.disabled = false;
     }
+  });
+}
+
+function renderDeveloperProfile(signal) {
+  view.innerHTML = `<section class="panel profile-panel">
+    <h1 tabindex="-1">填寫開發者資料</h1>
+    <p class="muted">請完成以下資料，供接線站帳號管理及必要聯繫使用。資料由接線站管理員查閱。</p>
+    <form id="developer-profile" class="form-stack spaced">
+      <label>姓名<input name="fullName" autocomplete="name" maxlength="100" required></label>
+      <label>電話<input name="phone" type="tel" autocomplete="tel" maxlength="50" required></label>
+      <label>服務醫院<input name="hospital" maxlength="150" required></label>
+      <label>職稱<input name="jobTitle" autocomplete="organization-title" maxlength="100" required></label>
+      <label>單位<input name="department" maxlength="150" required></label>
+      <button class="button button-primary" type="submit">儲存並繼續</button>
+      <p class="feedback" role="status"></p>
+    </form>
+  </section>`;
+  const form=view.querySelector('#developer-profile');
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=form.querySelector('button'); button.disabled=true;
+    try {
+      await api('developer-profile',{data:Object.fromEntries(new FormData(form)),signal});
+      if (!signal.aborted) await render({openPlatformsIfApproved:true});
+    } catch(error) { if(!signal.aborted) report(form.querySelector('.feedback'),error.message,'danger'); }
+    finally { button.disabled=false; }
   });
 }
 

@@ -402,6 +402,11 @@ async function renderAccount(params, signal) {
       <dl class="definition-grid">
         <div><dt>帳號狀態</dt><dd>${state(user)}</dd></div>
         <div><dt>建立時間</dt><dd>${time(user.created_at)}</dd></div>
+        <div><dt>姓名</dt><dd>${escapeHtml(user.full_name || '尚未填寫')}</dd></div>
+        <div><dt>電話</dt><dd>${escapeHtml(user.phone || '尚未填寫')}</dd></div>
+        <div><dt>服務醫院</dt><dd>${escapeHtml(user.hospital || '尚未填寫')}</dd></div>
+        <div><dt>職稱</dt><dd>${escapeHtml(user.job_title || '尚未填寫')}</dd></div>
+        <div><dt>單位</dt><dd>${escapeHtml(user.department || '尚未填寫')}</dd></div>
         <div><dt>啟用中 Bot</dt><dd>${count(user.active_bots)}</dd></div>
         <div><dt>近 30 天平台發送</dt><dd>${count(user.notifications_30d)}</dd></div>
       </dl>

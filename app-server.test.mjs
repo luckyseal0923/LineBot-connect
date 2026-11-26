@@ -15,6 +15,7 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
  try{
   await db.exec("create role anon; create role authenticated; create role linebot_runtime; create role linebot_reviewer; set linebot.isolated_test='yes';");
   await db.exec(await readFile(new URL('./db/005_independent_accounts.sql',import.meta.url),'utf8'));
+  await db.exec('create table linebot_private.developer_profiles(account_id uuid primary key);');
   await db.exec(await readFile(new URL('./db/006_runtime_grants.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('./db/007_review_retention.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('./db/011_multiple_bots.sql',import.meta.url),'utf8'));
@@ -30,6 +31,7 @@ test('complete isolated HTTP flow saves signed LINE events once per account',asy
   const pendingCookie=beforeApproval.headers.get('set-cookie').split(';')[0];
   assert.equal((await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},pendingCookie)).status,403);
   await db.exec("update linebot_private.accounts set status='active'");
+  await db.exec('insert into linebot_private.developer_profiles(account_id) select id from linebot_private.accounts');
   const session=async user=>{const r=await post('/independent-api/login',{username:user,password:'a secure password'});return r.headers.get('set-cookie').split(';')[0];};
   const a=await session('alice_a'),b=await session('bob_b');
   const save=await post('/independent-api/bot',{channelSecret:'secret-a',accessToken:'token-a'},a);

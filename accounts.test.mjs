@@ -12,6 +12,7 @@ test('independent accounts persist isolated sessions and random webhook keys', a
   await assert.rejects(db.exec(sql));
   await db.exec("rollback; set linebot.isolated_test = 'yes';");
   await db.exec(sql);
+  await db.exec('create table linebot_private.developer_profiles(account_id uuid primary key);');
   let now = new Date('2026-01-01T00:00:00Z');
   const accounts = createAccounts({db, clock: () => now});
   assert.equal((await accounts.register({username:'short_user',displayName:'Short',password:'1234567'})).status,'invalid');

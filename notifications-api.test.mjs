@@ -5,7 +5,7 @@ import {createIndependentApi} from './independent-api.mjs';
 
 test('notification routes require an approved session and same-origin writes',async()=>{
  const token='a'.repeat(43),id='11111111-1111-4111-8111-111111111111';let calls=[];
- const accounts={me:async value=>value===token?{id,status:'active'}:null};
+ const accounts={me:async value=>value===token?{id,status:'active',profile_complete:true}:null};
  const notifications={list:async owner=>{calls.push(owner);return [];},send:async(owner,body)=>{calls.push(owner);return {status:'accepted'};}};
  const bots={},allow=async()=>true,lookupBot=async()=>null;
  const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
