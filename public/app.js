@@ -300,6 +300,25 @@ function entryIntro() {
       <details class="entry-bot-help">
         <summary>什麼是 LINE Bot？</summary>
         <p>LINE Bot 讓你的 LINE 官方帳號能自動收發訊息。設定完成後，你的網站就能透過它發送通知。</p>
+      </details>
+      <details class="entry-bot-help entry-pricing">
+        <summary>LINE 訊息通知收費標準</summary>
+        <div class="entry-pricing-content">
+          <p class="entry-pricing-notice">本接線站為免費服務，不收取使用費。<br>相關訊息費用由 LINE 官方依您選擇的方案收取。</p>
+          <p>透過接線站發送的通知，會使用您自己的 LINE 官方帳號。您可依需要選擇方案：</p>
+          <div class="entry-pricing-table-wrap"><table class="entry-pricing-table">
+            <caption>LINE 官方帳號方案（新臺幣未稅）</caption>
+            <thead><tr><th scope="col">方案</th><th scope="col">每月費用</th><th scope="col">每月包含訊息量</th><th scope="col">超過後</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">輕用量</th><td>0 元</td><td>200 則</td><td>不可加購，可升級方案</td></tr>
+              <tr><th scope="row">中用量</th><td>1,000 元</td><td>3,000 則</td><td>不可加購，可升級方案</td></tr>
+              <tr><th scope="row">高用量</th><td>1,400 元</td><td>6,000 則</td><td>可加購訊息，第 1～50,000 則每則 0.2 元，第 50,001 則起每則 0.15 元</td></tr>
+            </tbody>
+          </table></div>
+          <p><strong>訊息怎麼計算？</strong><br>例如，一次通知 5 位收件者，約計入 5 則訊息。使用同一 LINE 官方帳號從其他管道發送的計費訊息，也會共用該帳號的訊息額度。</p>
+          <p><strong>請留意：若訊息額度用完，且未升級方案或未設定足夠的加購額度，接線站可能無法發送通知。</strong>建議定期至 LINE 官方帳號管理後台查看用量；使用高用量方案時，也可設定加購訊息上限，避免費用超出預期。</p>
+          <p><a href="https://tw.linebiz.com/column/LINEOA-2026-Price-Plan/" target="_blank" rel="noopener noreferrer">查看 LINE 官方最新收費說明</a></p>
+        </div>
       </details>`;
 }
 

@@ -300,6 +300,16 @@ html[data-auth="active"] .workspace-shell:has(> .sidebar[hidden]) > .workspace-c
 .entry-bot-help summary { cursor: pointer; color: #fff; font-weight: 700; }
 .entry-bot-help summary:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 .entry-bot-help p { margin: .55rem 0 0; font-size: .9rem; line-height: 1.6; }
+.entry-pricing-content { margin-top: .7rem; padding: 1rem; background: #fff; border-radius: .65rem; color: #253b35; }
+.entry-intro .entry-pricing-content p { max-width: none; color: #253b35; }
+.entry-intro .entry-pricing-content .entry-pricing-notice { margin-top: 0; color: #b42318; font-weight: 700; }
+.entry-pricing-content a { color: #075b45; font-weight: 700; text-decoration: underline; }
+.entry-pricing-table-wrap { max-width: 100%; overflow-x: auto; margin-top: .8rem; }
+.entry-pricing-table { width: 100%; min-width: 31rem; border-collapse: collapse; font-size: .8rem; line-height: 1.45; }
+.entry-pricing-table caption { margin-bottom: .35rem; text-align: left; font-weight: 700; }
+.entry-pricing-table th, .entry-pricing-table td { padding: .4rem; border: 1px solid #cbdad3; text-align: left; vertical-align: top; }
+.entry-pricing-table thead { background: #edf6f1; }
+
 .entry-card { padding: clamp(1.65rem, 3vw, 2.55rem); }
 .entry-card h1 { font-size: clamp(1.65rem, 2.7vw, 2.15rem); }
 .entry-card > p { margin-top: .5rem; }
