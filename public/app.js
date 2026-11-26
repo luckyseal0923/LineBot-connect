@@ -298,8 +298,12 @@ function entryIntro() {
   return `<div class="entry-line-icon" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M24 6C12.95 6 4 13.8 4 23.4c0 8.6 7.1 15.8 16.7 17.2.7.1 1.1.6 1 1.3l-.4 2.8c0 .5.5.8.9.5C32.9 39.9 44 32.3 44 23.4 44 13.8 35.05 6 24 6Z" fill="white"/><text x="24" y="27" text-anchor="middle" fill="#06c755" font-family="Arial,sans-serif" font-size="12" font-weight="bold">LINE</text></svg></div>
       <h2>讓你的網站，<br>透過 LINE 發送通知</h2>
       <p>將網站連接到接線站，當報名、申請等事件發生時，就能通知相關人員。</p>
-      <div class="entry-flow" aria-label="你的網站透過 LINE 接線站通知收件者的 LINE">
-        <span>你的網站</span><span aria-hidden="true">→</span><span>LINE 接線站</span><span aria-hidden="true">→</span><span>收件者的 LINE</span>
+      <div class="entry-flow" role="group" aria-label="你的網站透過 LineBOT 接線站通知收件者的 LINE">
+        <span>你的網站</span>
+        <span aria-hidden="true">→</span>
+        <span class="entry-flow-hub"><span class="brand-mark" aria-hidden="true">L</span>LineBOT 接線站</span>
+        <span aria-hidden="true">→</span>
+        <span>收件者的 LINE</span>
       </div>
       <details class="entry-bot-help">
         <summary>什麼是 LINE Bot？</summary>

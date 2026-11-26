@@ -285,8 +285,8 @@ html[data-auth="active"] .workspace-shell:has(> .sidebar[hidden]) > .workspace-c
 .entry-intro h2 { font-size: clamp(1.85rem, 3.1vw, 3.05rem); letter-spacing: -.034em; }
 .entry-intro p { max-width: 25rem; color: #e3f3ea; }
 .entry-flow { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin-top: .55rem; }
-.entry-flow span { color: #d9f7e7; font-size: .85rem; }
-.entry-flow span:nth-child(odd) {
+.entry-flow > span { color: #d9f7e7; font-size: .85rem; }
+.entry-flow > span:where(:nth-child(odd)) {
   padding: .48rem .62rem;
   background: #0f362bd9;
   border: 1px solid #8bcbb27a;
@@ -294,6 +294,18 @@ html[data-auth="active"] .workspace-shell:has(> .sidebar[hidden]) > .workspace-c
   color: #f5fdf8;
   font-weight: 650;
 }
+.entry-flow > .entry-flow-hub {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .38rem .55rem;
+  background: #e2f8ea;
+  border-color: #c4ebd3;
+  color: #143c30;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.entry-flow-hub .brand-mark { width: 1.35rem; height: 1.35rem; border-radius: .35rem; font-size: .85rem; }
 .entry-line-icon { width: 3.15rem; height: 3.15rem; padding: .25rem; border-radius: .9rem; background: #06c755; }
 .entry-line-icon svg { display: block; width: 100%; height: 100%; }
 .entry-bot-help { width: 100%; max-width: 25rem; padding-top: .8rem; border-top: 1px solid #ffffff40; }
