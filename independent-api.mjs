@@ -1,20 +1,24 @@
 
 import { eventWebhookPath } from './external-api.mjs';
 
+export function developerSessionCookie(origin, token = '') {
+  const secure = origin.protocol === 'https:' ? '; Secure' : '';
+  return `linebot_sid=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=${token ? 28800 : 0}`;
+}
+
 // This router is for isolated integration tests only. Production requires a
 // distributed rate limiter, dedicated DB role, persistent configuration, and
 // durable handling of non-empty LINE events before enabling public access.
-export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, recipientJoin }) {
+export function createIndependentApi({ accounts, bots, allow, lookupBot, publicOrigin, notifications, checkWebhook, integrations, platforms, recipientJoin, googleLogin = false }) {
   if (!accounts || !bots || typeof allow !== 'function' || typeof lookupBot !== 'function') throw new Error('Missing API dependencies');
   const origin = new URL(publicOrigin);
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password || !['https:', 'http:'].includes(origin.protocol) || (origin.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(origin.hostname))) throw new Error('Invalid origin');
-  const secure = origin.protocol === 'https:' ? '; Secure' : '';
-  const cookie = token => `linebot_sid=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=28800`;
   const getToken = req => /(?:^|;\s*)linebot_sid=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
   const botIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const webhookUrl = key => new URL(`/webhooks/line/${key}`, origin).href;
   const publicBot = bot => ({ id: bot.id, name: bot.botName, enabled: bot.enabled, webhookUrl: webhookUrl(bot.webhookKey) });
   const lineSetupPath = '/independent-api/platforms/line-setup';
+  const platformDeletePath = '/independent-api/platforms/delete';
   const withEventWebhook = ({ webhookToken, ...item }) => ({
     ...item,
     webhookUrl: new URL(eventWebhookPath(item.id), origin).href,
@@ -36,7 +40,11 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
     if (!path.startsWith('/independent-api/')) return false;
     if (req.method === 'POST' && req.headers.origin !== origin.origin) {send(res,403,{error:'來源不正確'});return true;}
     try {
-      if(path==='/independent-api/status' && req.method==='GET') {send(res,200,{enabled:true});return true;}
+      if(path==='/independent-api/status' && req.method==='GET') {send(res,200,googleLogin?{enabled:true,googleLogin:true}:{enabled:true});return true;}
+      if (googleLogin && ['/independent-api/register', '/independent-api/login'].includes(path)) {
+        send(res, 410, { error: '請使用 Google 登入接線站。' });
+        return true;
+      }
       if(path==='/independent-api/register' && req.method==='POST') {
         if(!await allow('register')){send(res,429,{error:'申請過於頻繁，請稍後再試。'});return true;}
         const result=await accounts.register(await read(req));
@@ -46,16 +54,16 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(!await allow('login')){send(res,429,{error:'登入過於頻繁，請稍後再試。'});return true;}
         const result=await accounts.login(await read(req));
         if(result.status!=='ok'){send(res,401,{error:'帳號或密碼不正確，或暫時無法登入。'});return true;}
-        send(res,200,{message:'登入成功'},{'Set-Cookie':cookie(result.token)});return true;
+        send(res,200,{message:'登入成功'},{'Set-Cookie':developerSessionCookie(origin,result.token)});return true;
       }
       if(path==='/independent-api/logout' && req.method==='POST') {
-        await accounts.logout(getToken(req));send(res,200,{message:'已登出'},{'Set-Cookie':`linebot_sid=; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=0`});return true;
+        await accounts.logout(getToken(req));send(res,200,{message:'已登出'},{'Set-Cookie':developerSessionCookie(origin)});return true;
       }
       if(path==='/independent-api/me' && req.method==='GET') {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入'});return true;}
         send(res,200,{username:user.username,displayName:user.display_name,status:user.status});return true;
       }
-      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path===lineSetupPath) {
+      if(path==='/independent-api/platforms' || path==='/independent-api/platforms/rename' || path===lineSetupPath || path===platformDeletePath) {
         const user=await accounts.me(getToken(req));if(!user){send(res,401,{error:'請先登入。'});return true;}
         if(user.status!=='active'){send(res,403,{error:'帳號尚未核准。'});return true;}
         if(!platforms){send(res,503,{error:'數位平台功能尚未開放。'});return true;}
@@ -74,6 +82,13 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
         if(req.method!=='POST'){send(res,405,{error:'請使用指定的方法。'});return true;}
         if(!await allow('platform-manage') || !await allow(`platform-manage:${user.id}`)){send(res,429,{error:'操作過於頻繁，請稍後再試。'});return true;}
         const data=await read(req);
+        if (path === platformDeletePath) {
+          const result = await platforms.remove(user.id, data?.id);
+          if (result.error === 'invalid') send(res, 400, { error: '請選擇要刪除的平台。' });
+          else if (result.error) send(res, 404, { error: '找不到可刪除的平台。' });
+          else send(res, 200, result);
+          return true;
+        }
         if (lineSetupRequest) {
           const result = await platforms.saveLineSetup(user.id, requestedPlatform, data);
           if (result.error === 'provider_required') send(res, 400, { error: '請填寫機器人管理單位（Provider）。' });
@@ -108,7 +123,8 @@ export function createIndependentApi({ accounts, bots, allow, lookupBot, publicO
           }
         }
         let saved;
-        try { saved = await bots.save(user.id, data.channelSecret, data.accessToken, bot); }
+        const linkedBot = scopedBot === '00000000-0000-0000-0000-000000000000' ? null : scopedBot;
+        try { saved = await bots.save(user.id, data.channelSecret, data.accessToken, bot, linkedBot); }
         catch (error) { if (error?.code !== '23505') throw error; }
         if (!saved) { send(res, 409, { error: '此 LINE Bot 已綁定其他帳號。' }); return true; }
         if (requestedPlatform && scopedBot==='00000000-0000-0000-0000-000000000000') {

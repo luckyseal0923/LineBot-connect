@@ -31,7 +31,7 @@ export function createPlatformServices({db}) {
     async list(accountId) {
       const {rows} = await db.query(`select p.id,p.name,p.bot_id as "botId",b.bot_name as "botName",b.enabled as "botEnabled"
         from linebot_private.platform_services p left join linebot_private.bot_credentials b on b.id=p.bot_id and b.account_id=p.account_id
-        where p.account_id=$1 order by p.created_at,p.id`,[accountId]);
+        where p.account_id=$1 and p.deleted_at is null order by p.created_at,p.id`,[accountId]);
       return rows;
     },
     async create(accountId, name) {
@@ -42,13 +42,18 @@ export function createPlatformServices({db}) {
     },
     async rename(accountId,id,name) {
       name=safeName(name);if(!uuid.test(id||'')||!name||name.length>80)return {error:'invalid'};
-      const {rows}=await db.query('update linebot_private.platform_services set name=$3 where id=$2 and account_id=$1 returning id',[accountId,id,name]);
+      const {rows}=await db.query('update linebot_private.platform_services set name=$3 where id=$2 and account_id=$1 and deleted_at is null returning id',[accountId,id,name]);
       return rows[0] || {error:'unavailable'};
+    },
+    async remove(accountId,id) {
+      if (!uuid.test(id || '')) return { error: 'invalid' };
+      const { rows: [result] } = await db.query('select linebot_private.delete_platform($1,$2) as id', [accountId,id]);
+      return result?.id ? result : { error: 'unavailable' };
     },
     async getLineSetup(accountId, id) {
       if (!uuid.test(id || '')) return { error: 'invalid' };
       const { rows } = await db.query(
-        `select (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup" from linebot_private.platform_services where account_id=$1 and id=$2`,
+        `select (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup" from linebot_private.platform_services where account_id=$1 and id=$2 and deleted_at is null`,
         [accountId, id]
       );
       return rows[0] || { error: 'unavailable' };
@@ -60,7 +65,7 @@ export function createPlatformServices({db}) {
       if (Object.keys(input).length && !lineSetup.providerName) return { error: 'provider_required' };
       const { rows } = await db.query(
         `update linebot_private.platform_services set line_setup=(line_setup - $4::text[]) || $3::jsonb
-         where account_id=$1 and id=$2 returning (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup"`,
+         where account_id=$1 and id=$2 and deleted_at is null returning (line_setup - 'recipientLiffId' - 'loginProfile') as "lineSetup"`,
         [accountId, id, JSON.stringify(lineSetup), Object.keys(lineSetupLimits)]
       );
       return rows[0] || { error: 'unavailable' };
@@ -69,8 +74,8 @@ export function createPlatformServices({db}) {
       if(!uuid.test(id||'')||!uuid.test(botId||''))return {error:'invalid'};
       try {
         const {rows}=await db.query(`update linebot_private.platform_services p set bot_id=$3
-          where p.account_id=$1 and p.id=$2 and p.bot_id is null
-          and exists(select 1 from linebot_private.bot_credentials b where b.id=$3 and b.account_id=$1)
+          where p.account_id=$1 and p.id=$2 and p.bot_id is null and p.deleted_at is null
+          and exists(select 1 from linebot_private.bot_credentials b where b.id=$3 and b.account_id=$1 and b.bot_user_id is not null)
           returning p.id`,[accountId,id,botId]);
         return rows[0] || {error:'unavailable'};
       } catch(error) { if(error.code==='23505')return {error:'bot_in_use'}; throw error; }

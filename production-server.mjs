@@ -13,6 +13,7 @@ import { createNotifications } from './notifications.mjs';
 import { createLineQuotaPoller } from './line-quota.mjs';
 import { createExternalIntegrations, hasExternalIntegrationSchema } from './external-integrations.mjs';
 import { createPlatformServices } from './platform-services.mjs';
+import { createGoogleSignIn } from './google-signin.mjs';
 
 const { LINEBOT_DATABASE_URL, LINEBOT_ENCRYPTION_KEY, PUBLIC_ORIGIN }=process.env;
 if(!LINEBOT_DATABASE_URL || !/^[A-Za-z0-9+/]{43}=$/.test(LINEBOT_ENCRYPTION_KEY || '') || !PUBLIC_ORIGIN) throw Error('LineBOT configuration is incomplete');
@@ -39,7 +40,11 @@ const integrations=integrationReady ? createExternalIntegrations({
 const notifications=createNotifications({db,key,recipientVault,tokenVault,allow,publicOrigin:PUBLIC_ORIGIN,includeIntegrations:integrationReady});
 const pollLineQuota=createLineQuotaPoller({db,tokenVault});
 const recipientJoin=createRecipientJoin({db,key,recipientVault,tokenVault,publicOrigin:PUBLIC_ORIGIN,allow});
-const server=createLinebotServer({recipientJoin,accounts,bots,vault,eventStore:events,allow,lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck(),integrations,platforms});
+const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
+const googleSignIn = GOOGLE_CLIENT_ID || GOOGLE_CLIENT_SECRET ? createGoogleSignIn({
+  accounts, key, allow, publicOrigin:PUBLIC_ORIGIN, clientId:GOOGLE_CLIENT_ID, clientSecret:GOOGLE_CLIENT_SECRET
+}) : undefined;
+const server=createLinebotServer({recipientJoin,accounts,bots,vault,eventStore:events,allow,lookupBot:createLineBotLookup(),publicOrigin:PUBLIC_ORIGIN,notifications,checkWebhook:createLineWebhookCheck(),integrations,platforms,googleSignIn});
 server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('LineBOT service ready'));
 const cleanup=setInterval(()=>db.query('select linebot_private.purge_expired_events()').catch(()=>console.error('Event cleanup failed')),60*60*1000);
 cleanup.unref();

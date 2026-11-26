@@ -357,14 +357,18 @@ input[readonly], textarea[readonly] { background: var(--surface); }
   align-items: start;
   gap: .9rem;
 }
-.platform-card { display: grid; gap: .85rem; align-content: start; border-top: 3px solid #6aab90; }
+.platform-card { position: relative; display: grid; gap: .65rem; align-content: start; border-top: 3px solid #6aab90; }
 .platform-card[data-connection="missing"] { border-top-color: #bf9a55; }
 .platform-card[data-connection="off"] { border-top-color: #a7b7af; }
-.platform-card .section-heading { align-items: start; gap: .45rem .65rem; margin: 0; }
+.platform-card .section-heading { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: .45rem .55rem; margin: 0; }
 .platform-card h2 { font-size: 1.15rem; }
-.platform-card .button-row { margin-top: .15rem; }
-.platform-card .card-settings { padding-top: .5rem; border-top: 1px solid var(--border); }
-.platform-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .5rem; margin-top: .4rem; }
+.platform-card-link { color: inherit; text-decoration: none; }
+.platform-card-link::after { content: ""; position: absolute; z-index: 1; inset: 0; border-radius: var(--radius); }
+.platform-card-link:hover { color: var(--green); }
+.platform-card-link:focus-visible::after { outline: 3px solid #298669; outline-offset: 2px; }
+.platform-card-actions > a, .platform-menu { position: relative; z-index: 2; }
+.platform-menu[open] { z-index: 3; }
+.platform-menu summary { width: 2.25rem; padding-inline: 0; }
 
 .summary-grid, .metric-grid {
   display: grid;
@@ -450,7 +454,7 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .copy-controls button { flex: 0 0 auto; }
 .webhook-status { padding: .68rem .76rem; border: 1px solid var(--border); border-radius: .56rem; background: var(--surface); }
 .webhook-status p { margin-top: .36rem; }
-.action-menu summary, .help-block summary, .card-settings summary {
+.action-menu summary, .help-block summary {
   color: var(--green);
   font-weight: 700;
   font-size: .88rem;
@@ -564,8 +568,8 @@ input[readonly], textarea[readonly] { background: var(--surface); }
 .integration-item .event-editor { border-top: 1px solid var(--border); padding-top: .8rem; }
 .event-editor > button { justify-self: start; }
 .event-menu { position: relative; }
-.event-menu summary { list-style: none; font-size: 1.2rem; }
-.event-menu summary::-webkit-details-marker { display: none; }
+:is(.event-menu,.platform-menu) summary { list-style: none; font-size: 1.2rem; }
+:is(.event-menu,.platform-menu) summary::-webkit-details-marker { display: none; }
 .event-menu-list {
   position: absolute; z-index: 5; right: 0; top: 100%; min-width: 9rem;
   display: grid; gap: .15rem; padding: .4rem; background: var(--paper);

@@ -29,6 +29,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     await db.exec(await readFile(new URL('./db/020_delete_integration.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/021_event_recipients.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('./db/022_webhook_number.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('./db/024_delete_platform.sql', import.meta.url), 'utf8'));
     assert.equal(await hasExternalIntegrationSchema(db), true);
     assert.equal((await db.query('select value from other_platform.records')).rows[0].value, 'unchanged');
 
@@ -168,7 +169,7 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal(savedSetup.status, 200);
     assert.deepEqual(await savedSetup.json(), { lineSetup: details });
     assert.equal((await portal('b', setupA)).status, 404);
-    assert.equal((await portal('b', setupA, { accountName: '其他帳號' })).status, 404);
+    assert.equal((await portal('b', setupA, { ...details, accountName: '其他帳號' })).status, 404);
     assert.equal((await portal('a', setupA, details, 'https://other.invalid')).status, 403);
     assert.equal((await portal('a', setupA, { channelSecret: 'synthetic credential' })).status, 400);
     assert.deepEqual(await (await portal('a', setupA)).json(), { lineSetup: details });
@@ -285,6 +286,17 @@ test('isolated HTTP integration flow enforces ownership, persists and deduplicat
     assert.equal((await integrations.list(alice.id)).some(item => item.id === id), false);
     assert.deepEqual(await integrations.manage(alice.id, id, 'rotate'), {error:'unavailable'});
     assert.ok((await notifications.history(alice.id)).some(record => record.integrationName === '課程報名'));
+
+    const nextDelivery = await postPrivate(followUp.privateWebhookUrl, {eventId:'before-platform-delete', ...payload});
+    assert.equal(nextDelivery.status, 202);
+    const { messageId } = await nextDelivery.json();
+    const sentBeforeDeletion = sent.length;
+    assert.deepEqual(await createPlatformServices({db}).remove(alice.id, service.id), {id:service.id});
+    assert.equal((await postPrivate(followUp.privateWebhookUrl)).status,401);
+    assert.equal(await integrations.runNext(),true);
+    assert.equal(sent.length,sentBeforeDeletion);
+    assert.equal((await notifications.history(alice.id)).find(row=>row.id===messageId).status,'cancelled');
+    assert.deepEqual((await integrations.list(alice.id)).map(row=>row.id),[otherRoute.id]);
 
     await db.exec('reset role; set role linebot_reviewer');
     assert.equal((await db.query("select integration_name from linebot_private.admin_notifications where username='alice' limit 1")).rows[0].integration_name, '課程報名');

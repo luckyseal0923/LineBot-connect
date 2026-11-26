@@ -209,8 +209,20 @@ async function render({ openPlatformsIfApproved = false } = {}) {
   currentUsername = user?.username;
   if (!user) {
     if (!['account', 'register'].includes(page)) page = replacePage('account');
-    setLayout('guest', page);
-    renderEntry(page);
+    try {
+      const { googleLogin } = await api('status', { signal });
+      if (signal.aborted) return;
+      if (googleLogin && page !== 'account') page = replacePage('account');
+      setLayout('guest', page);
+      if (googleLogin) {
+        guestLink.hidden = true;
+        renderGoogleEntry(params.get('google'));
+      } else {
+        renderEntry(page);
+      }
+    } catch (error) {
+      if (!signal.aborted) showPageError(view, '暫時無法取得登入設定，請稍後再試。');
+    }
   } else if (user.status !== 'active') {
     if (page !== 'account') page = replacePage('account');
     setLayout('pending', page, user);
@@ -256,6 +268,25 @@ async function render({ openPlatformsIfApproved = false } = {}) {
   if (!signal.aborted && (document.activeElement === document.body || document.activeElement === view)) {
     view.querySelector('h1')?.focus({ preventScroll: true });
   }
+}
+
+function renderGoogleEntry(notice) {
+  const messages = {
+    cancelled: '已取消 Google 登入。你可以再試一次。',
+    expired: '登入已逾時，請重新按「使用 Google 登入」。',
+    busy: '登入操作過於頻繁，請稍候再試。',
+    unavailable: '暫時無法完成 Google 登入，請稍後再試。',
+    identity: '請確認 Google 帳號的信箱已完成驗證。',
+    disabled: '這個帳號已停用，請聯絡管理員。'
+  };
+  view.innerHTML = `<div class="entry-layout">
+    <section class="panel entry-card" aria-labelledby="entry-title">
+      <h1 id="entry-title" tabindex="-1">登入接線站</h1>
+      <p class="muted">經 Google 驗證的萬芳醫院 @w.tmu.edu.tw 帳號可直接啟用。其他帳號由管理員核准。</p>
+      <a class="button button-primary button-full spaced" href="/auth/google/start">使用 Google 登入</a>
+      ${Object.hasOwn(messages, notice) ? `<p class="feedback spaced" role="status">${messages[notice]}</p>` : ''}
+    </section>
+  </div>`;
 }
 
 function renderEntry(page) {
@@ -549,6 +580,17 @@ async function renderPlatforms(signal) {
           <button class="button button-primary" type="submit">建立平台</button>
         </div>
       </form>
+    </dialog>
+    <dialog class="action-dialog" id="platform-rename-dialog" aria-labelledby="platform-rename-title">
+      <h2 id="platform-rename-title">重新命名平台</h2>
+      <form id="platform-rename" class="form-stack">
+        <label>平台名稱<input name="name" required maxlength="80" autofocus></label>
+        <p class="feedback" role="status"></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button">取消</button>
+          <button class="button button-primary" type="submit">儲存名稱</button>
+        </div>
+      </form>
     </dialog>`;
 
   const list = view.querySelector('#platform-list');
@@ -558,50 +600,58 @@ async function renderPlatforms(signal) {
   const close = form.querySelector('[data-close]');
   const createButton = form.querySelector('[type="submit"]');
   const createFeedback = form.querySelector('.feedback');
-  let savingSettings = false;
+  const newPlatform = view.querySelector('#new-platform');
+  const renameDialog = view.querySelector('#platform-rename-dialog');
+  const renameForm = view.querySelector('#platform-rename');
+  const renameButton = renameForm.querySelector('[type="submit"]');
+  const renameCancel = renameForm.querySelector('[type="button"]');
+  const renameFeedback = renameForm.querySelector('.feedback');
+  let platforms = [];
+  let renamingId;
+  let removing = false;
 
   function platformCard(platform) {
     const connection = !platform.botId ? 'missing' : platform.botEnabled ? 'ready' : 'off';
     const [label, tone] = connection === 'ready' ? ['Bot 已啟用', 'success']
       : connection === 'missing' ? ['尚未連結 Bot', 'warning'] : ['Bot 已停用', 'neutral'];
     return `<article class="panel platform-card" data-platform-id="${escapeHtml(platform.id)}" data-connection="${connection}">
-      <div class="section-heading"><h2 tabindex="-1">${escapeHtml(platformName(platform))}</h2>${chip(label, tone)}</div>
-      <p class="muted small">${platform.botId ? 'LINE Bot · ' + escapeHtml(platform.botName) : '連結 LINE Bot 後即可配對收件者。'}</p>
-      <div class="button-row">
-        ${buttonLink('進入平台', platformLink('overview', platform), 'secondary')}
-        ${platform.botId ? buttonLink('事件串接', platformLink('integrations', platform), 'quiet')
-          : buttonLink('設定 LINE Bot', platformLink('bot', platform), 'quiet')}
+      <div class="section-heading">
+        <h2><a class="platform-card-link" href="${escapeHtml(platformLink('overview', platform))}">${escapeHtml(platformName(platform))}</a></h2>
+        ${chip(label, tone)}
+        <details class="platform-menu" name="platform-management">
+          <summary class="button button-quiet" aria-label="${escapeHtml(platformName(platform))}的平台設定" title="平台設定">⋯</summary>
+          <div class="event-menu-list">
+            <button class="button button-quiet" type="button" data-platform-action="rename">重新命名</button>
+            <button class="button button-danger-outline" type="button" data-platform-action="delete">刪除平台</button>
+          </div>
+        </details>
       </div>
-      <details class="card-settings"><summary>平台設定</summary>
-        <form class="form-stack platform-form" data-platform-action="rename">
-          <label>平台名稱<input name="name" required maxlength="80" value="${escapeHtml(platform.name)}" placeholder="請填寫平台名稱"></label>
-          <button class="button button-secondary" type="submit">儲存名稱</button>
-        </form>
-        <p class="feedback" data-platform-status role="status"></p>
-      </details>
+      <p class="muted small">${platform.botId ? 'LINE Bot · ' + escapeHtml(platform.botName) : '連結 LINE Bot 後即可配對收件者。'}</p>
+      ${platform.botId ? '' : `<div class="button-row platform-card-actions">${buttonLink('設定 LINE Bot', platformLink('bot', platform), 'quiet')}</div>`}
     </article>`;
   }
 
-  async function load(focusId) {
-    const { platforms } = await api('platforms', { signal });
-    if (signal.aborted) return;
+  function drawPlatforms(focusId) {
     list.innerHTML = platforms.length
       ? `<div class="platform-grid">${platforms.map(platformCard).join('')}</div>`
       : emptyState('尚未建立數位平台', '用右上角的「新增數位平台」開始設定通知。');
     if (focusId) {
       const card = [...list.querySelectorAll('.platform-card')].find(card => card.dataset.platformId === focusId);
-      card?.querySelector('h2').focus();
+      card?.querySelector('.platform-card-link').focus();
     }
   }
 
-  view.querySelector('#new-platform').addEventListener('click', () => {
+  newPlatform.addEventListener('click', () => {
     form.reset();
     report(createFeedback, '');
     dialog.showModal();
   });
   close.addEventListener('click', () => dialog.close());
   dialog.addEventListener('cancel', event => { if (createButton.disabled) event.preventDefault(); });
-  signal.addEventListener('abort', () => { if (dialog.open) dialog.close(); }, { once: true });
+  signal.addEventListener('abort', () => {
+    if (dialog.open) dialog.close();
+    if (renameDialog.open) renameDialog.close();
+  }, { once: true });
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -620,32 +670,79 @@ async function renderPlatforms(signal) {
     }
   });
 
-  list.addEventListener('submit', async event => {
-    const settings = event.target.closest('[data-platform-action]');
-    if (!settings) return;
+  renameCancel.addEventListener('click', () => renameDialog.close());
+  renameDialog.addEventListener('cancel', event => { if (renameButton.disabled) event.preventDefault(); });
+  renameForm.addEventListener('submit', async event => {
     event.preventDefault();
-    if (savingSettings) return;
-    const card = settings.closest('[data-platform-id]');
-    const { platformId } = card.dataset;
-    const button = settings.querySelector('button');
-    const feedback = card.querySelector('[data-platform-status]');
-    savingSettings = button.disabled = true;
-    const success = '平台名稱已儲存。';
+    if (renameButton.disabled) return;
+    renameButton.disabled = renameCancel.disabled = true;
+    const name = renameForm.elements.name.value.trim();
     try {
-      const data = { id: platformId, ...Object.fromEntries(new FormData(settings)) };
-      await api('platforms/rename', { data, signal });
+      await api('platforms/rename', { data: { id: renamingId, name }, signal });
       if (signal.aborted) return;
-      report(status, success, 'success');
-      try { await load(platformId); }
-      catch { if (!signal.aborted) report(status, success + '請重新整理以查看結果。', 'warning'); }
+      platforms.find(platform => platform.id === renamingId).name = name;
+      renameDialog.close();
+      drawPlatforms(renamingId);
+      report(status, '平台名稱已儲存。', 'success');
     } catch (error) {
-      if (!signal.aborted) report(feedback, error.message, 'danger');
+      if (!signal.aborted) report(renameFeedback, error.message, 'danger');
     } finally {
-      savingSettings = button.disabled = false;
+      renameButton.disabled = renameCancel.disabled = false;
     }
   });
-  try { await load(); }
+  bindCardMenuDismissal(list, '.platform-menu', signal);
+  list.addEventListener('click', async event => {
+    const action = event.target.closest('[data-platform-action]');
+    if (!action || removing) return;
+    const { platformId } = action.closest('[data-platform-id]').dataset;
+    const platform = platforms.find(item => item.id === platformId);
+    const menu = action.closest('details');
+    menu.open = false;
+    menu.querySelector('summary').focus();
+    if (action.dataset.platformAction === 'rename') {
+      renamingId = platformId;
+      renameForm.elements.name.value = platform.name || '';
+      report(renameFeedback, '');
+      renameDialog.showModal();
+      return;
+    }
+
+    removing = true;
+    try {
+      const description = `刪除「${platformName(platform)}」後，平台的 Bot 連線和事件 Webhook 會失效，既有發送紀錄會保留。`;
+      if (!await confirmAction('刪除平台', description, '確認刪除', signal)) return;
+      report(status, '正在刪除平台…');
+      await api('platforms/delete', { data: { id: platformId }, signal });
+      if (signal.aborted) return;
+      platforms = platforms.filter(item => item.id !== platformId);
+      drawPlatforms();
+      newPlatform.focus();
+      report(status, '已刪除「' + platformName(platform) + '」。', 'success');
+    } catch (error) {
+      if (!signal.aborted) report(status, error.message, 'danger');
+    } finally {
+      removing = false;
+    }
+  });
+  try {
+    ({ platforms } = await api('platforms', { signal }));
+    if (!signal.aborted) drawPlatforms();
+  }
   catch (error) { if (!signal.aborted) showPageError(list, error.message); }
+}
+
+function bindCardMenuDismissal(list, selector, signal) {
+  document.addEventListener('click', event => {
+    const menu = list.querySelector(selector + '[open]');
+    if (menu && !menu.contains(event.target)) menu.open = false;
+  }, { signal });
+  list.addEventListener('keydown', event => {
+    const menu = event.target.closest(selector + '[open]');
+    if (menu && event.key === 'Escape') {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    }
+  });
 }
 
 function confirmAction(title, description, label, signal, style = 'danger') {
@@ -1482,17 +1579,7 @@ async function renderIntegrations(signal) {
 
   const list = workspace.querySelector('#integration-list');
   const feedback = workspace.querySelector('#integration-feedback');
-  document.addEventListener('click', event => {
-    const menu = list.querySelector('.event-menu[open]');
-    if (menu && !menu.contains(event.target)) menu.open = false;
-  }, { signal });
-  list.addEventListener('keydown', event => {
-    const menu = event.target.closest('.event-menu[open]');
-    if (menu && event.key === 'Escape') {
-      menu.open = false;
-      menu.querySelector('summary').focus();
-    }
-  });
+  bindCardMenuDismissal(list, '.event-menu', signal);
   const createForm = workspace.querySelector('#integration-create');
   const newEvent = view.querySelector('#new-event');
   function toggleCreate(open) {

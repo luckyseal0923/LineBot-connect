@@ -199,7 +199,7 @@ function state(user) {
 
 function userLink(entry) {
   return `<a class="table-title" href="${escapeHtml(href('users', { username: entry.username }))}">${escapeHtml(entry.display_name)}</a>
-    <small>${escapeHtml(entry.username)}</small>`;
+    <small>${escapeHtml(entry.google_email || entry.username)}</small>`;
 }
 
 function reviewButton(status, index) {

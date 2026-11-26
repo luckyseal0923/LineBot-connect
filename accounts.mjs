@@ -48,6 +48,17 @@ export function createAccounts({ db, clock = () => new Date() }) {
       await db.query('insert into linebot_private.sessions (token_hash,account_id,expires_at) values ($1,$2,$3)', [tokenDigest(token), account.id, new Date(now.getTime()+8*60*60*1000)]);
       return { status: 'ok', token };
     },
+    async loginWithGoogle({ subject, email, displayName, hostedDomain }) {
+      const token = randomBytes(32).toString('base64url');
+      const username = 'g_' + randomBytes(12).toString('hex');
+      const expiresAt = new Date(clock().getTime() + 8 * 60 * 60 * 1000);
+      const { rows } = await db.query(`with account as (
+        select linebot_private.google_sign_in($1,$2,$3,$4,$5) as id
+      ) insert into linebot_private.sessions (token_hash,account_id,expires_at)
+      select $6,id,$7 from account where id is not null returning account_id`,
+      [username, subject, email, displayName, hostedDomain, tokenDigest(token), expiresAt]);
+      return rows.length ? { status: 'ok', token } : { status: 'invalid' };
+    },
     async me(token) {
       if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
       const result = await db.query(`select a.id,a.username,a.display_name,a.webhook_key,a.status from linebot_private.sessions s

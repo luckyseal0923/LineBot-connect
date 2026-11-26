@@ -6,7 +6,7 @@ import { recipientHash } from './notifications.mjs';
 const validPlatform = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const validLiff = /^\d{5,15}-[A-Za-z0-9]{4,64}$/;
 const source = `from linebot_private.platform_services p
-  join linebot_private.accounts a on a.id=p.account_id and a.status='active'
+  join linebot_private.accounts a on a.id=p.account_id and a.status='active' and p.deleted_at is null
   join linebot_private.bot_credentials b on b.id=p.bot_id and b.account_id=p.account_id and b.enabled`;
 
 export function createRecipientJoin({ db, key, recipientVault, tokenVault, publicOrigin, allow, fetchImpl = fetch }) {
@@ -27,14 +27,14 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
       if (!validLiff.test(liff)) return { error: '請輸入 LINE Developers 提供的 LIFF ID。' };
       const saved = await db.query(`update linebot_private.platform_services set
         line_setup=jsonb_set(line_setup,'{recipientLiffId}',to_jsonb($3::text))
-        where id=$1 and account_id=$2 and bot_id=$4`, [id, owner, liff, row.bot_id]);
+        where id=$1 and account_id=$2 and bot_id=$4 and deleted_at is null`, [id, owner, liff, row.bot_id]);
       if (!saved.rowCount) return null;
       row.liff = liff;
     }
     const { rows: [profile] } = await db.query(
       `select line_setup->'loginProfile' as saved, line_setup->>'providerName' as provider,
         line_setup->>'contactEmail' as email, line_setup->>'region' as region
-       from linebot_private.platform_services where id=$1 and account_id=$2`, [id,owner]);
+       from linebot_private.platform_services where id=$1 and account_id=$2 and deleted_at is null`, [id,owner]);
     if (!profile) return null;
     const loginProfile = profile.saved || {
       channel: '收件者登記', app: '收件者登記', description: '登入後填寫姓名，加入此平台的通知收件名單。',
@@ -114,7 +114,7 @@ export function createRecipientJoin({ db, key, recipientVault, tokenVault, publi
     if (!/^[^\s@<>*]+@[^\s@<>*]+\.[^\s@<>*]+$/.test(profile.email)) return {error:'請填寫完整的聯絡信箱。'};
     const result = await db.query(`update linebot_private.platform_services p set
       line_setup=jsonb_set(line_setup,'{loginProfile}',$3::jsonb)
-      where p.id=$1 and p.account_id=$2 and exists
+      where p.id=$1 and p.account_id=$2 and p.deleted_at is null and exists
       (select 1 from linebot_private.bot_credentials b where b.id=p.bot_id and b.account_id=$2 and b.enabled)`,
       [id,owner,JSON.stringify(profile)]);
     return result.rowCount ? {loginProfile:profile} : null;

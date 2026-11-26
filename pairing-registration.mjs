@@ -7,7 +7,7 @@ const ticketPattern = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.([A-Za-z0
 const inactive = '這個連結已使用或已失效。如尚未完成登記，請向邀請人索取新配對碼。';
 const formLifetime = "interval '30 minutes'";
 const activeBot = `join linebot_private.accounts a on a.id=b.account_id and a.status='active'
-  join linebot_private.platform_services p on p.bot_id=b.id and p.account_id=b.account_id`;
+  join linebot_private.platform_services p on p.bot_id=b.id and p.account_id=b.account_id and p.deleted_at is null`;
 
 function pairingMessage(code) {
   return `這是我的配對碼：${code}。請直接送出，不用修改。`;

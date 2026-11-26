@@ -6,8 +6,8 @@ import { createIndependentApi } from './independent-api.mjs';
 import { createWebhookHandler } from './line-webhook.mjs';
 import { createExternalApi } from './external-api.mjs';
 
-export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin}) {
- const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin});
+export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleSignIn}) {
+ const api=createIndependentApi({accounts,bots,allow,lookupBot,publicOrigin,notifications,checkWebhook,integrations,platforms,recipientJoin,googleLogin:Boolean(googleSignIn)});
  const externalApi=createExternalApi({integrations,allow});
  const webhook=createWebhookHandler({findBot:bots.findByWebhook,vault,handleEvents:async(account,events,bot)=>{await eventStore(account,events);if(notifications)await notifications.pair(account,bot,events);}});
  const root=fileURLToPath(new URL('./public/',import.meta.url));
@@ -22,6 +22,7 @@ export function createLinebotServer({accounts,bots,vault,eventStore,allow,lookup
  const headers={'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
  return createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
+  if (googleSignIn && (path==='/auth/google/start' || path==='/auth/google/callback')) return googleSignIn(req,res,path);
   if (path==='/pair-registration' && notifications?.registration) {
     try { return await notifications.registration.handle(req,res); }
     catch { res.writeHead(503,{...headers,'Content-Type':'application/json'});return res.end(JSON.stringify({error:'暫時無法登記，請再試一次。'})); }

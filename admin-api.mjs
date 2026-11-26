@@ -86,7 +86,12 @@ export function createAdminApi({reviewDb,authorize,publicOrigin}) {
    const admin=await authorize(req);
    if(!admin?.id || (admin.mfaVerified!==true && admin.passwordVerified!==true)){send(res,401,{error:'請先登入管理員帳號。'});return true;}
    if(path==='/admin-api/pending' && req.method==='GET'){
-    const result=await reviewDb.query("select username,display_name,status,created_at from linebot_private.accounts where status='pending' order by created_at limit 100");
+    const pending = " from linebot_private.accounts where status='pending' order by created_at limit 100";
+    const columns = 'select username,display_name,status,created_at';
+    const result = await reviewDb.query(columns + ',google_email' + pending).catch(error => {
+      if (error.code !== '42703') throw error;
+      return reviewDb.query(columns + pending);
+    });
     send(res,200,{accounts:result.rows});return true;
    }
    const listName = path.slice('/admin-api/'.length);

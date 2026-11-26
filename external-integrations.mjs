@@ -56,10 +56,13 @@ export function createExternalIntegrations({ db, key, messageVault, recipientVau
     const keyHash = digest(apiKey);
     // Existing clients may still provide a single recipient when creating an event.
     const source = recipientId
-      ? `select $1::uuid,r.id,$3::uuid ${eligibleRecipients} and ($4::uuid is null or b.id=$4)`
-      : `select p.account_id,null::uuid,p.id from linebot_private.platform_services p
-         where p.id=$3 and p.account_id=$1 and $2::uuid is null and $4::uuid is not null`;
-    const {rows}=await db.query(`with target(account_id,recipient_id,platform_id) as (${source})
+      ? `select $1::uuid,r.id,$3::uuid ${eligibleRecipients} and ($4::uuid is null or b.id=$4)
+         and ($3::uuid is null or exists (select 1 from platform p where p.bot_id=b.id)) for share of b`
+      : `select $1::uuid,null::uuid,id from platform where $2::uuid is null and $4::uuid is not null`;
+    const {rows}=await db.query(`with platform as materialized (
+      select p.id,p.bot_id from linebot_private.platform_services p
+      where p.id=$3 and p.account_id=$1 and p.deleted_at is null for share of p
+    ), target(account_id,recipient_id,platform_id) as (${source})
       insert into linebot_private.integrations(id,account_id,recipient_id,platform_id,name,event_name,key_hash,key_tail)
       select $5,account_id,recipient_id,platform_id,$6,$6,$7,$8 from target returning id`,
       [accountId,recipientId || null,platformId,botId,id,name,keyHash,apiKey.slice(-6)]);
