@@ -19,12 +19,19 @@ test('migrates existing bots, isolates services and keeps a one-to-one bot assig
   }
   const existing=(await db.query('select name,event_name,key_hash from linebot_private.integrations')).rows[0];
   assert.deepEqual(existing,{name:'原有名稱',event_name:null,key_hash:'a'.repeat(64)});
+  await db.query(`insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label)
+    select $1,$2,'bulk-' || n,'{}','示例' from generate_series(1,201) n`, [a,bot]);
+  await db.query("insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label,active) values($1,$2,'inactive','{}','停用',false)",[a,bot]);
+  await db.query("insert into linebot_private.recipients(account_id,bot_id,line_hash,encrypted_line_id,label) values($1,$2,'other','{}','其他帳號')",[b,otherBot]);
   await db.exec('set role linebot_runtime');
   const services=createPlatformServices({db});const list=await services.list(a);
   assert.equal(list.length,1);assert.equal(list[0].botId,bot);assert.equal(list[0].name,null);
+  assert.equal(list[0].recipientCount,202);assert.equal(list[0].eventCount,1);
+  const otherCounts=(await services.list(b))[0];assert.equal(otherCounts.recipientCount,1);assert.equal(otherCounts.eventCount,0);
   assert.equal((await services.rename(b,list[0].id,'跨帳號')).error,'unavailable');
   assert.equal((await services.rename(a,list[0].id,'課程報名平台')).id,list[0].id);
   const created=await services.create(a,'教具借用平台');assert.ok(created.id);
+  const empty=(await services.list(a)).find(p=>p.id===created.id);assert.equal(empty.recipientCount,0);assert.equal(empty.eventCount,0);
   assert.equal((await services.attach(a,created.id,otherBot)).error,'unavailable');
   assert.equal((await services.attach(a,created.id,bot)).error,'bot_in_use');
   await db.exec('reset role');

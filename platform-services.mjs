@@ -29,7 +29,15 @@ export function createPlatformServices({db}) {
   if (!db?.query) throw Error('Missing platform database');
   return {
     async list(accountId) {
-      const {rows} = await db.query(`select p.id,p.name,p.bot_id as "botId",b.bot_name as "botName",b.enabled as "botEnabled"
+      const {rows} = await db.query(`select p.id,p.name,p.bot_id as "botId",b.bot_name as "botName",b.enabled as "botEnabled",
+        (select count(*)::int from linebot_private.recipients r
+          where r.account_id=p.account_id and r.bot_id=p.bot_id and r.active) as "recipientCount",
+        (select count(*)::int from linebot_private.integrations i
+          where i.account_id=p.account_id and i.deleted_at is null and
+            (i.platform_id=p.id or (i.platform_id is null and exists (
+              select 1 from linebot_private.recipients r
+              where r.id=i.recipient_id and r.account_id=p.account_id and r.bot_id=p.bot_id
+            )))) as "eventCount"
         from linebot_private.platform_services p left join linebot_private.bot_credentials b on b.id=p.bot_id and b.account_id=p.account_id
         where p.account_id=$1 and p.deleted_at is null order by p.created_at,p.id`,[accountId]);
       return rows;

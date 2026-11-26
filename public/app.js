@@ -693,8 +693,14 @@ async function renderPlatforms(signal) {
           </div>
         </details>
       </div>
-      <p class="muted small">${platform.botId ? 'LINE Bot · ' + escapeHtml(platform.botName) : '連結 LINE Bot 後即可配對收件者。'}</p>
-      ${platform.botId ? '' : `<div class="button-row platform-card-actions">${buttonLink('設定 LINE Bot', platformLink('bot', platform), 'quiet')}</div>`}
+      <p class="platform-bot-name">LINE Bot：${platform.botId ? escapeHtml(platform.botName || '未命名') : '尚未設定'}</p>
+      <div class="platform-card-counts" aria-label="網站設定數量">
+        <div><span>已登記收件對象</span><strong>${Number.isInteger(platform.recipientCount) ? platform.recipientCount : '—'}</strong><span>人</span></div>
+        <div><span>通知事件</span><strong>${Number.isInteger(platform.eventCount) ? platform.eventCount : '—'}</strong><span>個</span></div>
+      </div>
+      <div class="platform-card-actions">${platform.botId
+        ? `<span class="platform-card-action-label">管理網站與通知 <span aria-hidden="true">→</span></span>`
+        : buttonLink('設定 LINE Bot →', platformLink('bot', platform), 'quiet')}</div>
     </article>`;
   }
 
