@@ -302,7 +302,7 @@ function renderEntry(page) {
     </div>
     <section class="panel entry-card" aria-labelledby="entry-title">
       <h1 id="entry-title" tabindex="-1">${heading}</h1>
-      <p class="muted">${signingUp ? '帳號核准後，就能自行新增數位平台。' : '登入後，選擇你要管理的數位平台。'}</p>
+      <p class="muted">${signingUp ? '帳號核准後，就能自行新增網站接線。' : '登入後可管理網站的 LINE 通知。'}</p>
       <form id="${signingUp ? 'register-form' : 'login-form'}" class="form-stack">
         <div class="field"><label for="entry-username">帳號</label>
           <input id="entry-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="32"
@@ -354,7 +354,7 @@ function renderPending(user) {
   view.innerHTML = `<section class="panel centered-status">
     ${chip('等待審核', 'warning')}
     <h1 tabindex="-1">帳號申請審核中</h1>
-    <p>${escapeHtml(user.displayName)}（${escapeHtml(user.username)}），帳號核准後即可新增數位平台並設定通知。</p>
+    <p>${escapeHtml(user.displayName)}（${escapeHtml(user.username)}），帳號核准後即可新增網站接線並設定通知。</p>
     <p class="muted">如需了解審核進度，請聯絡平台管理員。</p>
     <button class="button button-primary" id="check-approval" type="button">重新查詢審核狀態</button>
   </section>`;
@@ -565,19 +565,19 @@ function renderRouteMap(target, integrations, recipients, platform, signal) {
 }
 
 async function renderPlatforms(signal) {
-  view.innerHTML = pageHeading('我的數位平台', '選擇要管理的平台。每個平台各自使用一個 LINE Bot。',
-    '<button class="button button-primary" type="button" id="new-platform">新增數位平台</button>') +
+  view.innerHTML = pageHeading('我的網站與 LINE Bot', '每個網站搭配一個 LINE Bot，點選卡片即可管理通知。',
+    '<button class="button button-primary" type="button" id="new-platform">新增網站接線</button>') +
     `<p id="platform-feedback" class="feedback flash-banner" role="status"></p>
     <div id="platform-list"><p class="page-loading" role="status">正在載入平台…</p></div>
     <dialog class="action-dialog" id="platform-dialog" aria-labelledby="platform-dialog-title">
-      <h2 id="platform-dialog-title">新增數位平台</h2>
-      <p class="muted">建立後即可設定這個平台的 LINE Bot。</p>
+      <h2 id="platform-dialog-title">新增網站接線</h2>
+      <p class="muted">輸入網站名稱，建立後即可設定對應的 LINE Bot。</p>
       <form id="platform-create" class="form-stack">
-        <label>數位平台名稱<input name="name" maxlength="80" required placeholder="例如 課程報名平台" autofocus></label>
+        <label>網站名稱<input name="name" maxlength="80" required placeholder="例如 課程報名網站" autofocus></label>
         <p class="feedback" role="status"></p>
         <div class="dialog-actions">
           <button class="button button-secondary" type="button" data-close>取消</button>
-          <button class="button button-primary" type="submit">建立平台</button>
+          <button class="button button-primary" type="submit">建立接線</button>
         </div>
       </form>
     </dialog>
@@ -634,7 +634,7 @@ async function renderPlatforms(signal) {
   function drawPlatforms(focusId) {
     list.innerHTML = platforms.length
       ? `<div class="platform-grid">${platforms.map(platformCard).join('')}</div>`
-      : emptyState('尚未建立數位平台', '用右上角的「新增數位平台」開始設定通知。');
+      : emptyState('尚未建立網站接線', '點選「新增網站接線」，為你的網站設定 LINE 通知。');
     if (focusId) {
       const card = [...list.querySelectorAll('.platform-card')].find(card => card.dataset.platformId === focusId);
       card?.querySelector('.platform-card-link').focus();
@@ -657,7 +657,7 @@ async function renderPlatforms(signal) {
     event.preventDefault();
     if (createButton.disabled) return;
     createButton.disabled = close.disabled = true;
-    report(createFeedback, '正在建立平台…');
+    report(createFeedback, '正在建立網站接線…');
     try {
       const { id } = await api('platforms', { data: { name: new FormData(form).get('name') }, signal });
       if (signal.aborted) return;
